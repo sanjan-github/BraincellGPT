@@ -1,1 +1,0 @@
-"""BrainCellGPT backend package."""
