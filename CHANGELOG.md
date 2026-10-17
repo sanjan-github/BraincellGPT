@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- **`web/index.html`** — Reformatted the inline CSS into readable, indented rules without intentionally changing selectors or declarations.
+- Removed the obsolete `backend/` FastAPI/Gemini and `frontend/` Next.js implementations; the maintained app is the root `app.py` plus `web/index.html`.
+
 ### Fixed
 - **`app.py`** — `PORT` was read from the environment before `load_dotenv()` ran,
   so a `PORT` entry in `.env` was silently ignored. `PORT` is now resolved after
