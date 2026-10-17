@@ -1,13 +1,12 @@
 """BrainCellGPT: one-command local app using only Python's standard library.
 
 Run from the repository root: python app.py
-Set GEMINI_API_KEY in the environment or in a local .env file.
+Set GROQ_API_KEY in the environment or in a local .env file.
 """
 from __future__ import annotations
 
 import json
 import os
-import threading
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -39,10 +38,10 @@ load_dotenv()
 
 
 def generate_reply(message: str, history: list[dict], personality: str) -> str:
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError(
-            "GEMINI_API_KEY is missing. Add it to a .env file in the project root."
+            "GROQ_API_KEY is missing. Add it to a .env file in the project root."
         )
 
     styles = {
@@ -53,63 +52,59 @@ def generate_reply(message: str, history: list[dict], personality: str) -> str:
         "brutally_honest": "Be direct and analytical without being insulting. Separate evidence from assumptions.",
     }
     style = styles.get(personality, styles["normal"])
-    contents = []
+    messages = [{
+        "role": "system",
+        "content": (
+            "You are BrainCellGPT, a context-aware conversational assistant. "
+            "Preserve relevant context from the supplied messages. Be honest about "
+            "uncertainty and never claim to have performed actions unless a real tool "
+            "confirms it. Persistent memory and external tools are not available.\n"
+            "Style: " + style
+        ),
+    }]
     for item in history[-16:]:
-        role = "user" if item.get("role") == "user" else "model"
-        text = str(item.get("content", ""))[:12000]
-        if text:
-            contents.append({"role": role, "parts": [{"text": text}]})
-    contents.append({"role": "user", "parts": [{"text": message}]})
+        role = item.get("role")
+        content = str(item.get("content", ""))[:12000]
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": message})
 
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-    endpoint = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        + model
-        + ":generateContent?key="
-        + api_key
-    )
+    model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    endpoint = "https://api.groq.com/openai/v1/chat/completions"
     payload = {
-        "system_instruction": {
-            "parts": [{
-                "text": (
-                    "You are BrainCellGPT, a context-aware conversational assistant. "
-                    "Preserve relevant context from the supplied messages. Be honest about "
-                    "uncertainty and never claim to have performed actions unless a real tool "
-                    "confirms it. Persistent memory and external tools are not available.\n"
-                    "Style: " + style
-                )
-            }]
-        },
-        "contents": contents,
-        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1200},
+        "model": model,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 1200,
     }
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + api_key,
+        },
         method="POST",
     )
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
             data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        # Do not expose the request URL because it contains the API key.
         if exc.code in (400, 401, 403):
             raise RuntimeError(
-                "Gemini rejected the request. Check that your API key is valid and enabled."
+                "Groq rejected the request. Check your API key and GROQ_MODEL value."
             ) from exc
         if exc.code == 429:
-            raise RuntimeError("Gemini rate limit reached. Wait a little and try again.") from exc
-        raise RuntimeError(f"Gemini returned HTTP {exc.code}.") from exc
+            raise RuntimeError("Groq rate limit or quota reached. Wait and try again.") from exc
+        raise RuntimeError(f"Groq returned HTTP {exc.code}.") from exc
     except (urllib.error.URLError, TimeoutError) as exc:
-        raise RuntimeError("Could not reach Gemini. Check your internet connection.") from exc
+        raise RuntimeError("Could not reach Groq. Check your internet connection.") from exc
 
-    candidates = data.get("candidates", [])
-    parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
-    reply = "".join(part.get("text", "") for part in parts).strip()
-    if not reply:
-        raise RuntimeError("Gemini returned an empty response. Try again.")
-    return reply
+    choices = data.get("choices", [])
+    reply = choices[0].get("message", {}).get("content", "") if choices else ""
+    if not isinstance(reply, str) or not reply.strip():
+        raise RuntimeError("Groq returned an empty response. Try again.")
+    return reply.strip()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -128,9 +123,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             file_path = WEB_DIR / "index.html"
-            content_type = "text/html; charset=utf-8"
         elif path == "/health":
-            self.send_json(200, {"status": "ok", "service": "braincellgpt"})
+            self.send_json(200, {"status": "ok", "service": "braincellgpt", "provider": "groq"})
             return
         else:
             self.send_json(404, {"error": "Not found"})
@@ -141,7 +135,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": "Could not load web/index.html"})
             return
         self.send_response(200)
-        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -189,6 +183,7 @@ def main() -> None:
     print("\nBrainCellGPT is running.")
     print(f"Open http://localhost:{PORT} in your browser.")
     print(f"Health check: http://localhost:{PORT}/health")
+    print("Model provider: Groq")
     print("Press Ctrl+C to stop.\n")
     try:
         server.serve_forever()
