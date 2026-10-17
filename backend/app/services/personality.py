@@ -11,9 +11,9 @@ PERSONALITY_INSTRUCTIONS: dict[Personality, str] = {
 
 def build_system_instruction(personality: Personality, memory_enabled: bool) -> str:
     memory_rule = (
-        "Use only context included in this request; do not imply persistent memory exists."
-        if memory_enabled
-        else "Do not infer or claim access to past sessions. Use only the current request and supplied history."
+        "Do not infer or claim access to past sessions. Use only the current request and supplied history."
+        if not memory_enabled
+        else "You have access to the conversation history supplied in this request. Use it to maintain context across turns."
     )
     return (
         "You are BrainCellGPT, a context-aware conversational assistant. Preserve relevant context across "
