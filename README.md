@@ -2,113 +2,58 @@
 
 **One brain cell. Infinite confusion.**
 
-BrainCellGPT is a context-aware conversational AI starter project. The goal is to combine conversational context, user-controlled memory, configurable personality, safe tool calling, and an evaluation suite for conversational reliability.
+BrainCellGPT is a small context-aware conversational AI prototype. We deliberately simplified the development setup: **one Python file, one HTML page, no Node.js, no npm, and no third-party Python packages.**
 
-> Status: development scaffold. The chat API requires a Gemini API key. Conversation history is supplied by the frontend and is not saved to a database. Persistent storage, authentication, and production deployment are not implemented.
+## Run it
 
-## Architecture
+Requirements: Python 3.10+ and internet access for Gemini.
 
-```text
-Next.js UI -> FastAPI -> Gemini model API
-```
+1. Open the repository root folder in VS Code.
+2. Copy `.env.example` to `.env` in the root folder.
+3. Put your Gemini API key in `.env`:
 
-## Current features
-
-- FastAPI backend with `/health` and `/api/chat`.
-- Gemini REST API integration.
-- Five configurable response personalities.
-- Bounded conversation context supplied with each request.
-- Next.js chat interface.
-- Backend unit tests.
-- VS Code tasks to start the frontend and backend together.
-- GitHub Actions checks for backend tests, frontend linting, TypeScript, and build.
-
-## Requirements
-
-- Python 3.11+
-- Node.js 20+
-- npm
-- A Gemini API key for actual AI responses
-
-## Run in VS Code (Windows)
-
-Open the **repository root folder** in VS Code, not only `frontend` or `backend`.
-
-1. Open a terminal in VS Code (`Terminal → New Terminal`).
-2. Install backend dependencies:
-
-   ```powershell
-   cd backend
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   pip install -r requirements.txt
-   Copy-Item .env.example .env
+   ```text
+   GEMINI_API_KEY=your_key_here
    ```
 
-3. Open `backend/.env` and set your own `GEMINI_API_KEY`. Never commit this file.
-4. In a second terminal, install frontend dependencies:
+4. Run one command from the repository root:
 
    ```powershell
-   cd frontend
-   npm install
+   python app.py
    ```
 
-5. From the repository root, choose `Terminal → Run Task… → BrainCellGPT: Run both`. This launches FastAPI and Next.js in separate terminal panels. If prompted, allow VS Code to run the tasks.
+5. Open **http://localhost:8000**.
 
-Open:
-- Frontend: http://localhost:3000
-- Backend health check: http://127.0.0.1:8000/health
-- Backend API docs: http://127.0.0.1:8000/docs
+No `npm install`, no virtual environment, no separate frontend server, no VS Code Go Live.
 
-If the task does not start correctly, run the two commands manually in separate terminals:
+### Run from VS Code
 
-Terminal 1:
-```powershell
-cd backend
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
+Use `Terminal → Run Task… → BrainCellGPT: Run`, or type `python app.py` in the terminal. Stop it with `Ctrl+C`.
 
-Terminal 2:
-```powershell
-cd frontend
-npm run dev
-```
+## Features
 
-### Why VS Code "Go Live" does not show this app
+- One local Python server serves both the interface and chat API.
+- Gemini API integration.
+- Five personalities: Normal, Sarcastic, Chaotic, Professional, and Brutally Honest.
+- Current-session conversation context.
+- Clear errors for missing/rejected API keys and connection failures.
+- Health check at `http://localhost:8000/health`.
 
-The Live Server **Go Live** button serves static files such as HTML, CSS, and browser JavaScript. BrainCellGPT is a Next.js app plus a separate FastAPI backend; Live Server does not start either service. Use `npm run dev` for the frontend and Uvicorn for the backend, or use the VS Code task above.
+## Current limitations
 
-## Configuration
+Conversation history is not saved after refresh. Long-term memory, database storage, authentication, and tool execution are not implemented. A valid Gemini API key and internet access are required for AI replies. This is a local development prototype, not a production-ready public service.
 
-Backend configuration is in `backend/.env.example`. The frontend defaults to `http://127.0.0.1:8000` for the backend API; set `NEXT_PUBLIC_API_URL` in `frontend/.env.local` only if you need a different API address.
+## Security
 
-Do not expose model-provider API keys through `NEXT_PUBLIC_*` variables.
-
-## Validation
-
-From `backend`:
-```powershell
-python -m pytest -q
-```
-
-From `frontend`:
-```powershell
-npm run lint
-npm run typecheck
-npm run build
-```
+Keep the API key in the root `.env` file. Never commit it or put it in browser JavaScript. The server binds to `127.0.0.1` by default, so only your computer can access it.
 
 ## Roadmap
 
-1. Persist conversations with PostgreSQL/Supabase and enforce per-user authorization.
-2. Implement memory creation, update, deletion, and retrieval.
-3. Add safe, allow-listed tool execution with structured argument validation.
-4. Expand benchmark cases for context retention, ambiguity, contradictions, tool honesty, and memory relevance.
-5. Add authentication, rate limits, observability, and deployment.
-
-## Security notes
-
-This is a development scaffold, not a production-ready service. It has no authentication or durable storage. Do not deploy it publicly with sensitive user data until access controls, persistence policies, privacy controls, and rate limiting are implemented.
+1. Make the simple local app reliable.
+2. Add durable conversation storage.
+3. Add user-controlled long-term memory.
+4. Add safe tool calling and evaluation.
+5. Add authentication and deployment after the core works.
 
 ## License
 
