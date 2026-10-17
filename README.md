@@ -2,74 +2,59 @@
 
 **One brain cell. Infinite confusion.**
 
-BrainCellGPT is a context-aware conversational AI starter project. The goal is to combine conversational context, user-controlled memory, configurable personality, safe tool calling, and an evaluation suite for conversational reliability.
+A small context-aware conversational AI prototype. The development setup is deliberately simple: **one Python file, one HTML page, no Node.js, no npm, and no third-party Python packages.**
 
-> Status: early scaffold. The backend includes a working chat API when configured with a Gemini API key, basic conversation history in process, memory abstractions, and tests for core logic. Persistent database storage, authentication, and production deployment are not implemented yet.
+## Run it
 
-## Architecture
+Requirements: Python 3.10+ and internet access for Groq.
 
-```text
-Next.js UI -> FastAPI -> conversation service -> model provider
-                           |                 -> memory store
-                           |                 -> approved tools (planned)
-                           -> response validation
-```
+1. Open the repository root folder in VS Code.
+2. Copy `.env.example` to `.env` in the root folder.
+3. Create a Groq API key in your Groq account and add it to `.env`:
 
-## Current features
+   ```text
+   GROQ_API_KEY=your_key_here
+   GROQ_MODEL=llama-3.3-70b-versatile
+   ```
 
-- FastAPI backend with `/health` and `/api/chat`.
-- Model provider integration through the Gemini REST API.
-- Configurable personality and bounded in-memory conversation context.
-- User-controlled memory enabled/disabled flag in each request (persistent memory is not yet implemented).
-- Minimal Next.js chat UI scaffold.
-- Unit tests for context construction and personality instructions.
+4. Run one command from the repository root:
 
-## Quick start
+   ```powershell
+   python app.py
+   ```
 
-### Backend
+5. Open **http://localhost:8000**.
 
-Requirements: Python 3.11+
+No `npm install`, no virtual environment, no separate frontend server, no VS Code Go Live.
 
-```bash
-cd backend
-python -m venv .venv
-# Windows PowerShell: .\.venv\Scripts\Activate.ps1
-# macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env  # on Windows, copy .env.example .env
-# Set GEMINI_API_KEY in .env
-uvicorn app.main:app --reload
-```
+### Run from VS Code
 
-Backend runs at `http://127.0.0.1:8000`; interactive API docs at `/docs`.
+Use `Terminal → Run Task… → BrainCellGPT: Run`, or type `python app.py` in the terminal. Stop it with `Ctrl+C`.
 
-### Frontend
+## Features
 
-Requirements: Node.js 20+
+- One local Python server serves both the interface and chat API.
+- Groq Chat Completions API integration.
+- Five personalities: Normal, Sarcastic, Chaotic, Professional, and Brutally Honest.
+- Current-session conversation context.
+- Clear errors for missing/rejected API keys and connection failures.
+- Health check at `http://localhost:8000/health`.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## Current limitations
 
-Frontend runs at `http://localhost:3000`. Set `NEXT_PUBLIC_API_URL=http://127.0.0.1:8000` in `frontend/.env.local` if needed.
+Conversation history is not saved after refresh. Long-term memory, database storage, authentication, and tool execution are not implemented. A valid Groq API key and internet access are required for AI replies. The configured model must be available to your Groq account; change `GROQ_MODEL` in `.env` if needed. This is a local development prototype, not a production-ready public service.
 
-## Configuration
+## Security
 
-See `backend/.env.example`. Never commit API keys. Do not expose provider keys through `NEXT_PUBLIC_*` variables.
+Keep the API key in the root `.env` file. Never commit it or put it in browser JavaScript. The app binds to `127.0.0.1` by default, so only your computer can access it.
 
 ## Roadmap
 
-1. Persist conversations with PostgreSQL/Supabase and enforce per-user authorization.
-2. Implement explicit memory creation, update, deletion, and retrieval.
-3. Add safe, allow-listed tool execution with structured argument validation.
-4. Add benchmark datasets for context retention, ambiguity, contradictions, tool honesty, and memory relevance.
-5. Add authentication, rate limits, observability, and deployment.
-
-## Security notes
-
-This is a development scaffold, not a production-ready service. It has no authentication or durable storage. The in-memory conversation store is process-local and resets on restart. Do not deploy it publicly with sensitive user data until access controls, persistence policies, privacy controls, and rate limiting are implemented.
+1. Make the simple local app reliable.
+2. Add durable conversation storage.
+3. Add user-controlled long-term memory.
+4. Add safe tool calling and evaluation.
+5. Add authentication and deployment after the core works.
 
 ## License
 
