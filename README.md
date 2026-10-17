@@ -2,100 +2,78 @@
 
 **One brain cell. Infinite confusion.**
 
-A context-aware conversational AI prototype built with a FastAPI backend and a Next.js frontend.
+A context-aware conversational AI prototype.
+One Python file. One HTML file. One command to run it.
 
 ---
 
-## Architecture
+## How to run
 
-| Layer | Stack | Entry point |
-|-------|-------|-------------|
-| Backend | Python + FastAPI + Gemini API | `backend/app/main.py` |
-| Frontend | Next.js 15 + React 19 + TypeScript | `frontend/app/page.tsx` |
-| Legacy server | Pure-Python stdlib + Groq API | `app.py` (kept for reference) |
+**Requirements:** Python 3.10 or later and an internet connection.
 
----
+### 1 — Get a Groq API key
 
-## Quick start
+Sign up at [console.groq.com](https://console.groq.com) and create a free API key.
 
-**Requirements:** Python 3.10+, Node.js 18+, and internet access for the Gemini API.
+### 2 — Configure the environment
 
-### 1 — Backend
+Copy `.env.example` to `.env` in the repository root:
 
 ```powershell
-# From the repository root
-Copy-Item backend\.env.example backend\.env
-# Edit backend\.env and add your Gemini API key:
-#   GEMINI_API_KEY=your_key_here
-
-python -m venv backend\.venv
-backend\.venv\Scripts\Activate.ps1
-pip install -r backend\requirements.txt
-uvicorn app.main:app --reload --app-dir backend
+Copy-Item .env.example .env
 ```
 
-The API will be available at **http://127.0.0.1:8000**.  
-Health check: **http://127.0.0.1:8000/health**
+Open `.env` and add your Groq API key:
 
-### 2 — Frontend
+```text
+GROQ_API_KEY=your_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+PORT=8000
+```
+
+### 3 — Start the server
 
 ```powershell
-# In a second terminal, from the repository root
-Copy-Item frontend\.env.example frontend\.env.local
-# Default: NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
-
-cd frontend
-npm install
-npm run dev
+python app.py
 ```
 
-Open **http://localhost:3000**.
+### 4 — Open the app
 
-### VS Code tasks
+Open **http://localhost:8000** in your browser.
 
-Use `Terminal → Run Task…` to start the backend or frontend from VS Code (see `.vscode/tasks.json`).
+> **Note:** Do not open `web/index.html` directly in your browser and
+> do not use VS Code's Go Live extension. The chat interface makes API
+> requests to the Python server, so the server must be running.
+
+### Run from VS Code
+
+Use `Terminal → Run Task… → BrainCellGPT: Run`, or run `python app.py`
+in the terminal. Stop the server with **Ctrl+C**.
 
 ---
 
 ## Features
 
-- FastAPI backend with CORS, input validation, and structured error responses.
-- Gemini API integration (`gemini-2.5-flash` by default; change `GEMINI_MODEL` in `backend/.env`).
+- One-command startup: `python app.py`.
+- No npm, no Node.js, no virtual environment, no build step required.
+- Groq Chat Completions API integration (configurable model).
 - Five personalities: Normal, Sarcastic, Chaotic, Professional, and Brutally Honest.
-- Conversation context preserved per browser session (client-supplied history).
-- Clear error messages for missing/rejected API keys and connection failures.
+- Conversation context preserved within the current browser session.
+- Clear error messages for missing/rejected API keys, rate limits, and connection failures.
 - Health check at `GET /health`.
-- `pytest` test suite for backend logic.
+- Mobile and desktop responsive layout.
 
 ---
 
 ## Environment variables
 
-### `backend/.env`
+All variables are optional except `GROQ_API_KEY`. Set them in the root `.env` file.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GEMINI_API_KEY` | *(required)* | Your Google AI Studio API key |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Model name |
-| `FRONTEND_ORIGIN` | `http://localhost:3000` | Allowed CORS origin |
-| `MAX_CONTEXT_MESSAGES` | `16` | History messages sent to the model |
-
-### `frontend/.env.local`
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:8000` | Backend base URL |
-
----
-
-## Running tests
-
-```powershell
-# Backend unit tests (from repository root)
-backend\.venv\Scripts\Activate.ps1
-cd backend
-python -m pytest tests/ -v
-```
+| `GROQ_API_KEY` | *(required)* | Your Groq API key |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model name |
+| `PORT` | `8000` | Port the server listens on |
 
 ---
 
@@ -103,18 +81,21 @@ python -m pytest tests/ -v
 
 **Read these rules before changing code. They are project requirements, not optional suggestions.**
 
-### Keep the project focused
+### Keep the project simple
 
+- Preserve one-command startup: `python app.py`.
 - Do not add frameworks, packages, build steps, or services unless a concrete requirement justifies the complexity.
-- Prefer well-understood libraries over novel abstractions.
+- Do not reintroduce React, Next.js, npm, FastAPI, or a second server without explaining the need and getting approval from the project owner.
+- Prefer Python's standard library and browser-native HTML, CSS, and JavaScript.
 - Do not create abstractions, modules, or folders for hypothetical future flexibility. Add structure only to solve a current problem.
 
 ### Protect existing behaviour
 
-- Keep the API contract stable: `POST /api/chat` for chat and `GET /health` for health checks.
+- Treat `app.py` and `web/index.html` as the application entry points.
+- Keep the API contract: `POST /api/chat` for chat, `GET /health` for health checks.
 - Read the existing implementation before editing it. Do not rewrite working features unnecessarily.
-- Keep Gemini as the model provider unless the project owner explicitly approves a change.
-- Read the API key from `GEMINI_API_KEY`. Never hardcode secrets.
+- Keep Groq as the model provider unless the project owner explicitly approves a change.
+- Read the API key from `GROQ_API_KEY` and the model from `GROQ_MODEL`. Never hardcode secrets.
 - Never expose API keys in browser JavaScript, logs, screenshots, commits, or documentation.
 - Handle provider errors without exposing credentials or authenticated request details.
 
@@ -131,23 +112,23 @@ python -m pytest tests/ -v
 After changing Python code, run:
 
 ```powershell
-backend\.venv\Scripts\python.exe -m pytest backend\tests\ -v
+python -m py_compile app.py
 ```
 
-After changing frontend code, run:
+Then start the server and verify:
 
-```powershell
-cd frontend
-npm run typecheck
-npm run lint
-```
+- `http://localhost:8000` loads the interface.
+- `http://localhost:8000/health` returns a healthy JSON response.
+- A chat request succeeds with a valid Groq key.
 
-Do not claim tests passed unless they were actually run. State what was tested and what remains unverified.
+For UI changes, test the affected interactions. For API changes, test both success and error paths.
+Do not claim tests passed unless they were actually run.
+State what was tested and what remains unverified.
 
 ### Git and documentation
 
-- Never commit `.env`, `.env.local`, API keys, tokens, or private user data.
-- Update `.env.example` files whenever environment variables change; include placeholders only.
+- Never commit `.env`, API keys, tokens, or private user data.
+- Update `.env.example` whenever environment variables change; include placeholders only.
 - Update this README when setup, commands, architecture, features, or limitations change.
 - Clearly distinguish implemented features from planned features.
 - Do not merge unverified changes to `main` while checks are failing, unless the owner explicitly asks.
@@ -157,15 +138,21 @@ Do not claim tests passed unless they were actually run. State what was tested a
 
 ## Current limitations
 
-Conversation history is held in the current browser session and is not saved after refresh. Long-term memory, database storage, authentication, and tool execution are not implemented. A valid Gemini API key and internet access are required for AI responses. The configured model must be available to your Google AI account; change `GEMINI_MODEL` in `backend/.env` if needed. This is a local development prototype, not a production-ready public service.
+Conversation history is held in the current browser session and is not saved after a page refresh.
+Long-term memory, database storage, authentication, and tool execution are not implemented.
+A valid Groq API key and an internet connection are required for AI responses.
+The configured model must be available on your Groq account; change `GROQ_MODEL` in `.env` if needed.
+This is a local development prototype, not a production-ready public service.
 
 ## Security
 
-Keep the real API key in `backend/.env`. Never commit it or expose it to browser code. The backend binds to `127.0.0.1` by default. Do not expose either server publicly until authentication, rate limiting, input validation, and deployment security have been implemented and reviewed.
+Keep the real API key in the root `.env` file. Never commit it or expose it to browser code.
+The server binds to `127.0.0.1` by default. Do not expose the server publicly until authentication,
+rate limiting, input validation, and deployment security have been implemented and reviewed.
 
 ## Roadmap
 
-1. Keep the FastAPI + Next.js app stable and testable.
+1. Keep the one-command app stable and testable.
 2. Add durable conversation storage if needed.
 3. Add user-controlled long-term memory.
 4. Add safe tool calling and evaluation.

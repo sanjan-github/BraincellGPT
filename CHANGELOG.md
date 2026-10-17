@@ -3,25 +3,29 @@
 ## [Unreleased]
 
 ### Fixed
-- **`personality.py`** — Inverted `memory_enabled` condition in `build_system_instruction`.
-  When `memory_enabled=True`, the model was being told to behave as if memory was *disabled*, and vice versa.
-- **`tests/test_personality.py`** — Added two regression tests covering both branches of the memory policy logic.
-- **`README.md`** — Completely rewritten to document the current FastAPI + Next.js + Gemini architecture instead of the outdated `python app.py` + Groq setup.
-- **`.github/workflows/ci.yml`** — Added `backend` (pytest) and `frontend` (typecheck + ESLint) CI jobs. Kept the `legacy` job that checks `app.py` syntax and `web/index.html` presence.
-- **`next.config.ts`** — Set `outputFileTracingRoot` to silence the Next.js multiple-lockfile workspace root warning.
+- **`app.py`** — `PORT` was read from the environment before `load_dotenv()` ran,
+  so a `PORT` entry in `.env` was silently ignored. `PORT` is now resolved after
+  the dotenv call.
+- **`README.md`** — Rewrote to describe the actual application (`python app.py`,
+  Groq API, `web/index.html`). Removed incorrect FastAPI, Next.js, Gemini, npm,
+  and uvicorn instructions.
+- **`.github/workflows/ci.yml`** — Replaced the three-job workflow (which tested
+  the obsolete FastAPI/Next.js stack) with a single job that tests the actual
+  application: syntax check, `web/index.html` presence, and a live smoke-test suite.
+- **`docs/architecture.md`** — Updated to describe the actual request path through
+  `app.py` and Groq instead of FastAPI/Gemini/Next.js.
 
 ---
 
-## 0.1.0 — Initial scaffold
+## 0.1.0 — Single-file refactor
 
-- Added FastAPI backend with Gemini API adapter and pydantic-settings config.
-- Added a minimal Next.js chat UI with personality selector.
-- Added architecture/security notes and evaluation test specifications.
-- Marked persistence, authentication, durable memory, and tools as future work.
-
-## 0.0.1 — Legacy prototype
-
-- Single-file Python server (`app.py`) using only the standard library.
+- Simplified to a single Python server (`app.py`) using only the standard library.
+- Frontend moved to `web/index.html` (vanilla HTML, CSS, and JS).
 - Groq Chat Completions API integration.
-- Vanilla HTML/CSS/JS UI served from `web/index.html`.
 - Five personalities: Normal, Sarcastic, Chaotic, Professional, and Brutally Honest.
+- One-command startup: `python app.py`.
+- Rules for future developers and AI agents added to README.
+
+## 0.0.1 — Initial scaffold
+
+- Initial project skeleton committed.

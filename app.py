@@ -16,7 +16,6 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
 HOST = "127.0.0.1"
-PORT = int(os.environ.get("PORT", "8000"))
 
 
 def load_dotenv() -> None:
@@ -35,6 +34,8 @@ def load_dotenv() -> None:
 
 
 load_dotenv()
+# Resolve PORT after dotenv so a PORT entry in .env is respected.
+PORT = int(os.environ.get("PORT", "8000"))
 
 
 def generate_reply(message: str, history: list[dict], personality: str) -> str:
