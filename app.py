@@ -176,13 +176,35 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         with urllib.request.urlopen(request, timeout=60) as response:
             data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
+        # Surface a short, sanitized provider error so a bad base URL can be
+        # distinguished from a model/permission issue without exposing credentials.
+        detail = ""
+        try:
+            raw_error = exc.read(8192).decode("utf-8", errors="replace")
+            parsed_error = json.loads(raw_error)
+            error_obj = parsed_error.get("error", parsed_error) if isinstance(parsed_error, dict) else {}
+            if isinstance(error_obj, dict):
+                detail = error_obj.get("message") or error_obj.get("detail") or error_obj.get("error_description") or ""
+            elif isinstance(error_obj, str):
+                detail = error_obj
+            if not detail and isinstance(parsed_error, dict):
+                detail = parsed_error.get("message", "")
+        except (ValueError, AttributeError):
+            detail = ""
+        detail = str(detail).replace(api_key, "[redacted]") if api_key else str(detail)
+        detail = " ".join(detail.split())[:300]
+        suffix = " Provider detail: " + detail if detail else ""
         if exc.code in (400, 401, 403):
-            raise RuntimeError(label + " rejected the request. Check your API key and model ID.") from exc
+            raise RuntimeError(label + " returned HTTP " + str(exc.code) + ". Check the API key, account permissions, and model ID." + suffix) from exc
         if exc.code == 404:
-            raise RuntimeError(label + " endpoint or model was not found. Check the model ID and base URL.") from exc
+            if provider == "custom":
+                hint = " Verify the base URL is the provider's OpenAI-compatible API base (usually ending in /v1), and that the model ID is enabled for your account."
+            else:
+                hint = " Verify the model ID and provider endpoint."
+            raise RuntimeError(label + " returned HTTP 404: endpoint or model not found." + hint + suffix) from exc
         if exc.code == 429:
-            raise RuntimeError(label + " rate limit or quota reached. Wait and try again.") from exc
-        raise RuntimeError(label + " returned HTTP " + str(exc.code) + ".") from exc
+            raise RuntimeError(label + " returned HTTP 429: rate limit or quota reached. Wait and try again." + suffix) from exc
+        raise RuntimeError(label + " returned HTTP " + str(exc.code) + "." + suffix) from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         raise RuntimeError("Could not reach " + label + ". Check your connection and endpoint URL.") from exc
     if protocol == "anthropic":
