@@ -6,7 +6,6 @@
 
 **A chaotic chatbot for conversations that make absolutely no sense.**
 
-[![CI](https://github.com/sanjan-github/BraincellGPT/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sanjan-github/BraincellGPT/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
 
