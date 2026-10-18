@@ -160,6 +160,17 @@ Long-term memory, database storage, authentication, and tool execution are not i
 Cloud providers require valid provider credentials and network access. Ollama requires a running local service and an installed model. The selected model ID must be available to the chosen provider.
 This is a local development prototype, not a production-ready public service.
 
+## Security hardening
+
+- API responses include security headers and disable caching.
+- Chat and connection-test routes accept JSON POST requests only, enforce a request-size limit, and rate-limit requests per route.
+- The server binds to 127.0.0.1 and rejects API requests from non-loopback clients.
+- Custom provider URLs require HTTPS and are rejected when they resolve to non-public addresses; Ollama URLs are restricted to localhost.
+- A **Test connection** button sends a small test prompt to the selected provider. This may consume provider quota.
+- API keys are never written to server logs or committed to the repository. Browser session storage is not a secure vault; only use trusted local copies.
+
+These controls reduce risk but do not make the app production-ready or safe to expose publicly. The current interface uses inline JavaScript, so the Content Security Policy permits inline scripts; a stricter policy would require moving scripts/styles to separate files.
+
 ## Security
 
 You can enter a provider API key in the interface; it is stored in the current tab's session storage and sent to the BrainCellGPT server with chat requests. The server does not persist the supplied key, and request logging does not include request bodies. Alternatively, keep the key in the root `.env` file. Never commit real keys.
