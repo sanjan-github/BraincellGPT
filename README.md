@@ -160,6 +160,31 @@ Long-term memory, database storage, authentication, and tool execution are not i
 Cloud providers require valid provider credentials and network access. Ollama requires a running local service and an installed model. The selected model ID must be available to the chosen provider.
 This is a local development prototype, not a production-ready public service.
 
+## Model provider architecture
+
+BrainCellGPT takes inspiration from Roo Code's model-agnostic API layer, but keeps this project intentionally lightweight and dependency-free. Roo Code uses a provider factory, provider-specific handlers, shared stream/event types, model metadata, and validated provider settings. BrainCellGPT is being evolved toward those same separation-of-concerns principles without copying Roo Code's implementation.
+
+### Supported providers
+
+- **Cloud APIs:** Groq, OpenAI, Anthropic, OpenRouter, NVIDIA NIM, DeepSeek, Mistral AI, xAI, Together AI, Fireworks AI, and Cerebras.
+- **Local APIs:** Ollama and LM Studio, restricted to localhost URLs.
+- **Custom:** OpenAI-compatible APIs with an explicit HTTPS base URL and model ID.
+
+Provider defaults and model availability can change independently. If a provider rejects the default model, enter a model ID enabled for your account. Local model servers must be running on the same computer. Provider-specific APIs do not all expose identical capabilities; this first compatibility layer normalizes basic text chat, while advanced capabilities such as native tool calls, image input, reasoning metadata, token accounting, and streaming still need dedicated adapters before they can be claimed as supported.
+
+### Roo Code design lessons
+
+The relevant architecture patterns are:
+1. A provider factory/registry, rather than scattering provider decisions across UI code.
+2. A consistent adapter contract with provider-specific request and response handling.
+3. Explicit model metadata and capabilities, rather than assuming every model behaves the same.
+4. Centralized timeout/error handling, with actionable user-facing errors that never expose credentials.
+5. Validated provider settings and separate handling for local versus remote endpoints.
+6. A streaming event model for text, usage, reasoning, and tool calls.
+7. Tests for adapter behavior and settings validation.
+
+This is a staged adaptation, not a claim of feature parity with Roo Code's much larger coding-agent extension.
+
 ## Security hardening
 
 - API responses include security headers and disable caching.
