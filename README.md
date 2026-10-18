@@ -16,7 +16,7 @@ BrainCellGPT is built for absurd conversations, unexpected tangents, ridiculous 
 
 ## Features
 
-- **Five conversation styles:** Normal, Sarcastic, Chaotic, Professional, and Brutally Honest.
+- **Chaotic conversations:** Absurd replies, unexpected tangents, and unpredictable humour.
 - **Conversation context:** Earlier messages in the current session are included so replies can follow the conversation.
 - **Multiple providers:** Choose from supported hosted services or a local model.
 - **Flexible credentials:** Use a key from your local `.env` file or enter a key in the interface.
@@ -70,7 +70,7 @@ python app.py
 
 ### 4. Open the chat
 
-Visit **http://localhost:8000** in your browser, select a provider and conversation style, and start chatting.
+Visit **http://localhost:8000** in your browser, select a provider, and start chatting.
 
 Keep the server running while you use the app. Stop it with `Ctrl+C`.
 
