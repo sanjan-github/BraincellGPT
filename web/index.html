@@ -502,6 +502,7 @@ textarea:focus-visible {
     }
   });
   document.querySelector("#clearApiKey").addEventListener("click", () => {
+    sessionStorage.removeItem("braincellgpt_provider_api_key");
     sessionStorage.removeItem("braincellgpt_groq_api_key");
     apiKeyInput.value = "";
     apiKeyStatus.textContent = "Personal key cleared from this tab.";
