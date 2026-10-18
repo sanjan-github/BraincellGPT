@@ -131,6 +131,8 @@ def build_system_prompt(personality: str) -> str:
         "chaotic": "Push the absurdity and unpredictability further while keeping the conversation coherent.",
         "professional": "Keep the wording a little cleaner, but do not remove the chaotic BrainCellGPT identity.",
         "brutally_honest": "Be blunt and mischievous, but never cruel, unsafe, or needlessly insulting.",
+        "curious": "Be intensely inquisitive, questioning everything with childlike wonder and chaotic overthinking.",
+        "weird": "Embrace surreal logic, bizarre metaphors, and unorthodox leaps of thought while remaining responsive.",
     }
     style = styles.get(personality, styles["normal"])
     return (

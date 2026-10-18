@@ -3,418 +3,895 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#090b0f">
+<meta name="theme-color" content="#0A0A0A">
 <title>BrainCellGPT — One brain cell. Infinite confusion.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  color-scheme:dark;
-  --bg:#090b0f;
-  --panel:#101319;
-  --line:#252b36;
-  --text:#f2f4f8;
-  --muted:#858d9c;
-  --lime:#c7fb69;
-  --purple:#a899ff;
-  --red:#ff8d8d
+  color-scheme: dark;
+  --bg: #0A0A0A;
+  --panel: #111111;
+  --panel-elevated: #161616;
+  --line: #222222;
+  --line-light: #2c2c2c;
+  --text: #F2F4F8;
+  --muted: #8A8F98;
+  --neutral-disabled: #3A3A3A;
+  --accent: #CBFF00;
+  --accent-hover: #FF6B35;
+  --red: #FF6B6B;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
+
 * {
-  box-sizing:border-box
+  box-sizing: border-box;
 }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
 body {
-  margin:0;
-  background:radial-gradient(ellipse at 72% 4%,#7863ff12,transparent 35%),var(--bg);
-  color:var(--text);
-  font-family:system-ui,-apple-system,Segoe UI,sans-serif;
-  min-height:100vh
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-x: hidden;
 }
+
+/* Base interactive elements */
+button, input, select, textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* App Shell Layout */
 .shell {
-  display:grid;
-  grid-template-columns:250px minmax(0,1fr);
-  min-height:100vh
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  position: relative;
 }
+
+/* Left Sidebar - Conversation list */
 .sidebar {
-  border-right:1px solid var(--line);
-  padding:24px 18px;
-  display:flex;
-  flex-direction:column;
-  gap:25px;
-  background:#0b0d12e8
+  border-right: 1px solid var(--line);
+  background: #0D0D0D;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+  gap: 20px;
+  height: 100%;
+  overflow-y: auto;
+  z-index: 10;
 }
+
 .brand {
-  display:flex;
-  align-items:center;
-  gap:11px
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
-.logo {
-  display:grid;
-  place-items:center;
-  width:42px;
-  height:42px;
-  border:1px solid #363d48;
-  border-radius:13px;
-  background:#191e27;
-  font-size:23px
+
+.brand-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #161616;
+  border: 1px solid var(--line);
+  font-size: 20px;
+  flex-shrink: 0;
 }
-.brand strong {
-  display:block;
-  font-size:15px
+
+.brand-title {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--text);
 }
-.brand small {
-  display:block;
-  margin-top:3px;
-  color:var(--muted);
-  font-size:10px;
-  letter-spacing:.4px
+
+.brand-subtitle {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.2px;
 }
+
 .new-chat {
-  padding:12px;
-  border:1px solid #343b47;
-  border-radius:9px;
-  background:#171c24;
-  color:var(--text);
-  text-align:left;
-  cursor:pointer
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #141414;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  transition: all 0.15s ease;
 }
-.new-chat:hover,button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible,#apiKey:focus-visible {
-  outline:1px solid var(--lime);
-  outline-offset:2px
+
+.new-chat:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
-.status {
-  font-size:10px;
-  letter-spacing:1px;
-  color:var(--muted)
+
+.sidebar-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 4px;
 }
-.dot {
-  display:inline-block;
-  width:7px;
-  height:7px;
-  border-radius:50%;
-  background:var(--lime);
-  margin-right:8px
+
+.dot-status {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(203, 255, 0, 0.4);
 }
-.side-note {
-  margin-top:auto;
-  color:#777f8d;
-  font-size:12px;
-  line-height:1.8
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
 }
+
+/* Workspace Area */
 .workspace {
-  display:flex;
-  flex-direction:column;
-  min-height:100vh;
-  max-width:1300px;
-  width:100%;
-  margin:auto
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-width: 0;
+  position: relative;
+  background: var(--bg);
 }
+
+/* Fixed Header */
 .topbar {
-  padding:25px 34px;
-  border-bottom:1px solid var(--line);
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:18px
+  height: 60px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  background: rgba(10, 10, 10, 0.85);
+  backdrop-filter: blur(12px);
+  z-index: 20;
+  flex-shrink: 0;
 }
-.eyebrow {
-  font-size:10px;
-  letter-spacing:1.3px;
-  color:var(--muted)
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
-h1 {
-  font-size:22px;
-  letter-spacing:-.7px;
-  margin:7px 0 0
+
+.tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
 }
-.api-settings {
-  display:flex;
-  flex-direction:column;
-  gap:7px;
-  min-width:220px;
-  color:var(--muted);
-  font-size:10px;
-  letter-spacing:1px
+
+.tooltip-trigger {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--muted);
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  transition: color 0.15s ease;
 }
-.api-key-row {
-  display:flex;
-  gap:6px
+
+.tooltip-trigger:hover {
+  color: var(--accent-hover);
 }
-.provider-fields { min-width:250px; max-width:360px }
-.provider-fields label { display:block; margin-top:5px }
-.provider-fields select,.provider-fields input { width:100%; margin-top:5px }
-.provider-fields .api-key-row button { white-space:nowrap }
-.provider-fields .api-key-note { margin-top:5px }
-#apiKey,#baseUrl,#modelName {
-  min-width:0;
-  width:100%;
-  background:#151922;
-  color:var(--text);
-  border:1px solid var(--line);
-  padding:9px 10px;
-  border-radius:8px;
-  font-size:12px
+
+.tooltip-content {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: #181818;
+  border: 1px solid var(--line-light);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
-.api-key-row button {
-  border:1px solid var(--line);
-  border-radius:8px;
-  background:#171c24;
-  color:var(--text);
-  padding:8px 10px;
-  cursor:pointer
+
+.tooltip-wrap:hover .tooltip-content,
+.tooltip-wrap:focus-within .tooltip-content {
+  opacity: 1;
+  transform: translateY(0);
 }
-.api-key-note {
-  font-size:10px;
-  letter-spacing:0;
-  line-height:1.5;
-  max-width:330px;
-  padding:7px 9px;
-  border:1px solid transparent;
-  border-radius:7px;
-  overflow-wrap:anywhere
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
-.api-key-note[data-state="checking"] { color:#e8d38a; background:#e8d38a12; border-color:#e8d38a55 }
-.api-key-note[data-state="success"] { color:#c7fb69; background:#c7fb6912; border-color:#c7fb6955 }
-.api-key-note[data-state="error"] { color:#ff8d8d; background:#ff8d8d12; border-color:#ff8d8d88 }
-.personality {
-  display:flex;
-  flex-direction:column;
-  gap:7px;
-  color:var(--muted);
-  font-size:10px;
-  letter-spacing:1px
+
+.settings-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #141414;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  color: var(--text);
+  transition: all 0.15s ease;
 }
-select {
-  background:#151922;
-  color:var(--text);
-  border:1px solid var(--line);
-  padding:9px 12px;
-  border-radius:8px
+
+.settings-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
+
+/* Chat Viewport Area */
 .chat-area {
-  flex:1;
-  padding:30px;
-  overflow-y:auto
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
 }
+
+.chat-container {
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+/* Hero Section (Center on initial load) */
 .welcome {
-  max-width:550px;
-  margin:8vh auto;
-  text-align:center
+  margin: auto auto;
+  text-align: center;
+  max-width: 680px;
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
-.orbit {
-  width:70px;
-  height:70px;
-  margin:0 auto 25px;
-  display:grid;
-  place-items:center;
-  border:1px solid #373d4b;
-  border-radius:22px;
-  background:#151922;
-  font-size:34px
+
+.hero-brain {
+  font-size: 120px;
+  line-height: 1;
+  margin-bottom: 24px;
+  display: inline-block;
+  filter: drop-shadow(0 0 35px rgba(203, 255, 0, 0.25));
+  user-select: none;
+  transition: transform 0.25s ease;
 }
-.welcome h2 {
-  font-size:clamp(34px,5vw,55px);
-  line-height:1.08;
-  letter-spacing:-2px;
-  margin:18px 0
+
+.hero-brain:hover {
+  transform: scale(1.04);
 }
-.welcome h2 span {
-  color:var(--lime)
+
+.hero-headline {
+  font-family: var(--font-display);
+  font-size: clamp(40px, 6vw, 64px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -2px;
+  margin: 0 0 16px 0;
+  text-transform: uppercase;
+  color: #FFFFFF;
 }
-.intro {
-  color:var(--muted);
-  font-size:14px;
-  line-height:1.8;
-  max-width:440px;
-  margin:0 auto
+
+.hero-headline .accent-word {
+  color: var(--accent);
 }
+
+.hero-tagline {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 auto 32px auto;
+  line-height: 1.7;
+  max-width: 460px;
+}
+
+/* Boot Sequence below hero */
+.boot-sequence {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: #111111;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 1px;
+  margin-bottom: 28px;
+}
+
+.boot-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
 .suggestions {
-  display:flex;
-  justify-content:center;
-  gap:10px;
-  flex-wrap:wrap;
-  margin-top:26px
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
+
 .suggestions button {
-  background:#12161e;
-  border:1px solid var(--line);
-  border-radius:9px;
-  padding:11px 13px;
-  color:#cbd0d9;
-  cursor:pointer
+  background: #141414;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: #C2C6CE;
+  font-size: 12px;
+  transition: all 0.15s ease;
 }
+
+.suggestions button:hover {
+  border-color: var(--accent-hover);
+  color: #FFFFFF;
+}
+
+/* Messages List */
 .messages {
-  max-width:800px;
-  margin:0 auto;
-  display:flex;
-  flex-direction:column;
-  gap:25px
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
 }
+
+/* Each message gets one accent line on left, NO boxes, NO shadows */
 .message {
-  display:grid;
-  grid-template-columns:38px minmax(0,1fr);
-  gap:13px;
-  line-height:1.7
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0 8px 20px;
+  position: relative;
+  border-left: 2px solid;
+  animation: fadeIn 0.2s ease-out;
 }
-.avatar {
-  width:34px;
-  height:34px;
-  border-radius:10px;
-  display:grid;
-  place-items:center;
-  background:#1a202a;
-  color:var(--lime);
-  font-size:10px;
-  font-weight:700
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
-.message.user .avatar {
-  color:var(--purple)
+
+/* Speaker alternating colors: User = #FF6B35, Assistant/BrainCell = #CBFF00 */
+.message.user {
+  border-left-color: var(--accent-hover);
 }
-.message-label {
-  font-size:10px;
-  letter-spacing:1px;
-  color:var(--muted)
+
+.message.assistant {
+  border-left-color: var(--accent);
 }
-.message p {
-  white-space:pre-wrap;
-  overflow-wrap:anywhere;
-  margin:6px 0 0;
-  font-size:14px
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
 }
+
+.message-sender {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.message.user .message-sender {
+  color: var(--accent-hover);
+}
+
+.message.assistant .message-sender {
+  color: var(--accent);
+}
+
+.message-text {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .thinking {
-  color:var(--muted);
-  font-size:12px;
-  margin:5px 0 5px 50px
+  margin-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: fadeIn 0.2s ease-out;
 }
-.composer {
-  position:sticky;
-  bottom:0;
-  background:linear-gradient(transparent,var(--bg) 18%);
-  padding:18px 30px 22px;
-  max-width:900px;
-  width:100%;
-  margin:0 auto
+
+.error-banner {
+  margin: 16px 0;
+  padding: 12px 16px;
+  background: rgba(255, 107, 107, 0.08);
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  color: var(--red);
+  font-size: 13px;
 }
-.input-wrap {
-  display:flex;
-  gap:10px;
-  align-items:flex-end;
-  padding:10px;
-  border:1px solid #343b47;
-  background:#11151c;
-  border-radius:13px
+
+/* Full-width Fixed Bottom Input Bar */
+.composer-wrap {
+  width: 100%;
+  padding: 16px 24px 24px 24px;
+  background: linear-gradient(to top, var(--bg) 85%, transparent);
+  flex-shrink: 0;
+  z-index: 20;
 }
-.input-wrap:focus-within {
-  border-color:#7d8c5b
+
+.composer-bar {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  background: #121212;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-height: 56px;
+  padding: 4px 8px 4px 16px;
+  transition: border-color 0.1s ease;
+  box-sizing: border-box;
 }
-textarea {
-  flex:1;
-  resize:vertical;
-  min-height:42px;
-  max-height:180px;
-  background:transparent;
-  border:0;
-  outline:none;
-  color:var(--text);
-  padding:10px;
-  font:inherit;
-  font-size:14px
+
+.composer-bar:focus-within {
+  border-color: var(--accent);
 }
-textarea:focus-visible {
-  outline:none
+
+.composer-bar textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  height: 24px;
+  max-height: 180px;
+  padding: 4px 0;
 }
+
+.composer-bar textarea::placeholder {
+  color: var(--muted);
+}
+
 #send {
-  width:42px;
-  height:42px;
-  border:0;
-  border-radius:9px;
-  background:var(--lime);
-  color:#10130b;
-  font-size:22px;
-  cursor:pointer
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #0A0A0A;
+  font-size: 18px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-left: 8px;
+  transition: all 0.15s ease;
 }
+
+#send:hover:not(:disabled) {
+  background: var(--accent-hover);
+  color: #FFFFFF;
+}
+
 #send:disabled {
-  opacity:.45;
-  cursor:wait
+  background: var(--neutral-disabled);
+  color: #666666;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
-.hint {
-  text-align:center;
-  margin-top:11px;
-  color:#666f7d;
-  font-size:9px;
-  letter-spacing:.8px
+
+.composer-hint {
+  text-align: center;
+  margin-top: 8px;
+  color: #555555;
+  font-size: 10px;
+  letter-spacing: 0.5px;
 }
-.error {
-  max-width:800px;
-  margin:12px auto;
-  color:var(--red);
-  font-size:13px
+
+/* Settings Drawer & Overlay */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 100;
 }
-.empty-state {
-  color:var(--muted)
+
+.drawer-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
 }
-@media(max-width:700px) {
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: 400px;
+  background: #111111;
+  border-left: 1px solid var(--line);
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.2s ease-out;
+  z-index: 101;
+}
+
+.drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drawer-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.drawer-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  color: var(--muted);
+}
+
+.drawer-close:hover {
+  color: var(--text);
+  background: #1C1C1C;
+}
+
+.drawer-body {
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-label {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.form-control {
+  width: 100%;
+  background: #161616;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text);
+  transition: border-color 0.15s ease;
+}
+
+.form-control:focus {
+  border-color: var(--accent);
+}
+
+.api-key-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-secondary {
+  flex: 1;
+  padding: 8px 12px;
+  background: #1A1A1A;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.api-key-note {
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #161616;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.api-key-note[data-state="checking"] {
+  color: #E8D38A;
+  border-color: #E8D38A55;
+  background: rgba(232, 211, 138, 0.08);
+}
+
+.api-key-note[data-state="success"] {
+  color: var(--accent);
+  border-color: rgba(203, 255, 0, 0.4);
+  background: rgba(203, 255, 0, 0.08);
+}
+
+.api-key-note[data-state="error"] {
+  color: var(--red);
+  border-color: rgba(255, 107, 107, 0.4);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
   .shell {
-    grid-template-columns:1fr
+    grid-template-columns: 1fr;
   }
   .sidebar {
-    padding:12px 16px;
-    border-right:0;
-    border-bottom:1px solid var(--line);
-    flex-direction:row;
-    align-items:center;
-    gap:12px
-  }
-  .brand small,.side-note {
-    display:none
-  }
-  .new-chat {
-    margin-left:auto;
-    padding:9px
+    display: none;
   }
   .topbar {
-    padding:20px 18px;
-    align-items:flex-start;
-    flex-direction:column
-  }
-  .personality {
-    flex-direction:row;
-    align-items:center
+    padding: 0 16px;
   }
   .chat-area {
-    padding:20px 16px
+    padding: 20px 16px;
   }
-  .composer {
-    padding:14px 14px 18px
+  .composer-wrap {
+    padding: 12px 16px 16px 16px;
   }
-  .hint {
-    font-size:8px
+  .hero-brain {
+    font-size: 80px;
+    margin-bottom: 16px;
   }
-  .welcome {
-    margin:5vh auto
+  .hero-headline {
+    font-size: 36px;
   }
-  .welcome h2 {
-    letter-spacing:-1.4px
+  .drawer {
+    max-width: 100%;
   }
 }
 </style>
 </head>
 <body>
-<main class="shell">
-<aside class="sidebar">
-  <div class="brand"><div class="logo" aria-hidden="true">🧠</div><div><strong>BrainCellGPT</strong><small>one cell, many problems</small></div></div>
-  <button class="new-chat" id="newChat">＋ New conversation</button>
-  <div class="side-note"><span class="dot"></span>Context matters.<br>So does knowing when you're wrong.</div>
+<div class="shell">
+  <!-- Left Sidebar (Conversation list) -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon" aria-hidden="true">🧠</div>
+      <div>
+        <strong class="brand-title">BrainCellGPT</strong>
+        <span class="brand-subtitle">one cell, many problems</span>
+      </div>
+    </div>
+    <button class="new-chat" id="newChat">＋ New conversation</button>
+    <div class="sidebar-status">
+      <span class="dot-status"></span>
+      <span>online & confused</span>
+    </div>
+    <div class="sidebar-footer">
+      Context matters.<br>So does knowing when you’re wrong.
+    </div>
+  </aside>
+
+  <!-- Workspace Area -->
+  <main class="workspace">
+    <!-- Topbar: minimal with tooltip & settings trigger -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="tooltip-wrap">
+          <span class="tooltip-trigger">
+            CONVERSATIONAL AI LAB ⓘ
+          </span>
+          <div class="tooltip-content" role="tooltip">
+            Let's see what breaks.
+          </div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button class="settings-btn" id="openSettings" aria-label="Open settings" title="Settings">
+          ⚙️
+        </button>
+      </div>
+    </header>
+
+    <!-- Chat Viewport -->
+    <section class="chat-area" id="chatArea" aria-live="polite">
+      <div class="chat-container">
+        <!-- Hero section with 120px brain, headline, boot sequence -->
+        <div class="welcome" id="welcome">
+          <div class="hero-brain" aria-hidden="true">🧠</div>
+          <h1 class="hero-headline">One brain cell.<br><span class="accent-word">Infinite confusion.</span></h1>
+          <p class="hero-tagline">A context-aware AI prototype built for chaos-embracing devs. Try a follow-up, break its train of thought, and see what happens.</p>
+          <div class="boot-sequence">
+            <span class="boot-dot"></span>
+            <span>BOOT SEQUENCE COMPLETE</span>
+          </div>
+          <div class="suggestions">
+            <button type="button" data-prompt="Remember this: our project is BrainCellGPT.">Test context retention ↗</button>
+            <button type="button" data-prompt="Then do it.">Test ambiguity ↗</button>
+          </div>
+        </div>
+
+        <div class="messages" id="messages"></div>
+        <div id="error" class="error-banner" role="alert" hidden></div>
+      </div>
+    </section>
+
+    <!-- Full-width Fixed Bottom Input Bar -->
+    <div class="composer-wrap">
+      <form class="composer-bar" id="chatForm">
+        <textarea id="messageInput" rows="1" maxlength="12000" placeholder="Ask something. Make it weird." aria-label="Message"></textarea>
+        <button id="send" type="submit" aria-label="Send message">⌲</button>
+      </form>
+      <div class="composer-hint">ENTER TO SEND · SHIFT + ENTER FOR NEW LINE</div>
+    </div>
+  </main>
+</div>
+
+<!-- Settings Drawer & Overlay -->
+<div class="drawer-overlay" id="drawerOverlay" aria-hidden="true"></div>
+<aside class="drawer" id="settingsDrawer" aria-labelledby="settingsTitle" aria-hidden="true">
+  <div class="drawer-header">
+    <h2 class="drawer-title" id="settingsTitle">Configuration</h2>
+    <button class="drawer-close" id="closeSettings" aria-label="Close settings">✕</button>
+  </div>
+  <div class="drawer-body">
+    <!-- Personality selection moved inside drawer -->
+    <div class="form-group">
+      <label class="form-label" for="personality">Personality</label>
+      <select class="form-control" id="personality">
+        <option value="sarcastic">Sarcastic</option>
+        <option value="curious">Curious</option>
+        <option value="brutal">Brutal</option>
+        <option value="weird">Weird</option>
+        <option value="normal">Normal</option>
+        <option value="chaotic">Chaotic</option>
+        <option value="professional">Professional</option>
+      </select>
+    </div>
+
+    <!-- Model Provider Selection -->
+    <div class="form-group">
+      <label class="form-label" for="providerSelect">Model Provider</label>
+      <select class="form-control" id="providerSelect">
+        <option value="groq">Groq</option>
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic Claude</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="nvidia_nim">NVIDIA NIM</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="mistral">Mistral AI</option>
+        <option value="xai">xAI (Grok)</option>
+        <option value="together">Together AI</option>
+        <option value="fireworks">Fireworks AI</option>
+        <option value="cerebras">Cerebras</option>
+        <option value="ollama">Ollama (local)</option>
+        <option value="lmstudio">LM Studio (local)</option>
+        <option value="custom">Custom OpenAI-compatible API</option>
+      </select>
+    </div>
+
+    <!-- API Key Input -->
+    <div class="form-group">
+      <label class="form-label" for="apiKey">API Key</label>
+      <input class="form-control" id="apiKey" type="password" autocomplete="off" placeholder="Optional — leave blank to use .env" aria-label="Provider API key">
+      <div class="api-key-row">
+        <button class="btn-secondary" id="saveApiKey" type="button">Use key</button>
+        <button class="btn-secondary" id="clearApiKey" type="button">Clear</button>
+        <button class="btn-secondary" id="testConnection" type="button">Test connection</button>
+      </div>
+      <div class="api-key-note" id="apiKeyStatus" role="status">Settings stay in this browser tab. Keys are sent to the local server only with chat requests.</div>
+    </div>
+
+    <!-- Custom Endpoint Fields -->
+    <div class="form-group" id="customFields" hidden>
+      <label class="form-label" for="baseUrl" id="baseUrlLabel">API Base URL</label>
+      <input class="form-control" id="baseUrl" type="url" placeholder="https://api.example.com/v1">
+    </div>
+
+    <!-- Model ID -->
+    <div class="form-group">
+      <label class="form-label" for="modelName">Model ID</label>
+      <input class="form-control" id="modelName" type="text" placeholder="Use provider default or enter model ID">
+    </div>
+  </div>
 </aside>
-<section class="workspace">
-  <header class="topbar"><div><div class="eyebrow">CONVERSATIONAL AI LAB</div><h1>Let's see what breaks.</h1></div>
-    <label class="personality">PERSONALITY<select id="personality"><option value="sarcastic">Sarcastic</option><option value="normal">Normal</option><option value="chaotic">Chaotic</option><option value="professional">Professional</option><option value="brutally_honest">Brutally honest</option></select></label>
-    <div class="api-settings provider-fields"><label for="providerSelect">MODEL PROVIDER</label><select id="providerSelect"><option value="groq">Groq</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic Claude</option><option value="openrouter">OpenRouter</option><option value="nvidia_nim">NVIDIA NIM</option><option value="deepseek">DeepSeek</option><option value="mistral">Mistral AI</option><option value="xai">xAI (Grok)</option><option value="together">Together AI</option><option value="fireworks">Fireworks AI</option><option value="cerebras">Cerebras</option><option value="ollama">Ollama (local)</option><option value="lmstudio">LM Studio (local)</option><option value="custom">Custom OpenAI-compatible API</option></select><label for="apiKey">API KEY</label><input id="apiKey" type="password" autocomplete="off" placeholder="Optional — leave blank to use .env" aria-label="Optional provider API key"><div class="api-key-row"><button id="saveApiKey" type="button">Use key</button><button id="clearApiKey" type="button">Clear</button><button id="testConnection" type="button">Test connection</button></div><div id="customFields" hidden><label for="baseUrl" id="baseUrlLabel">API BASE URL</label><input id="baseUrl" type="url" placeholder="https://api.example.com/v1"></div><label for="modelName">MODEL ID</label><input id="modelName" type="text" placeholder="Use provider default or enter model ID"><div class="api-key-note" id="apiKeyStatus" role="status">Settings stay in this browser tab. Keys are sent to the local server only with chat requests.</div></div>
-  </header>
-  <section class="chat-area" id="chatArea" aria-live="polite">
-    <div class="welcome" id="welcome"><div class="orbit">🧠</div><div class="eyebrow">BOOT SEQUENCE COMPLETE</div><h2>One brain cell.<br><span>Infinite confusion.</span></h2><p class="intro">A context-aware AI prototype. Try a follow-up, change the subject, then see whether it remembers the thread.</p><div class="suggestions"><button data-prompt="Remember this: our project is BrainCellGPT.">Test context retention ↗</button><button data-prompt="Then do it.">Test ambiguity ↗</button></div></div>
-    <div class="messages" id="messages"></div><div id="error" class="error" role="alert"></div>
-  </section>
-  <form class="composer" id="chatForm"><div class="input-wrap"><textarea id="messageInput" rows="1" maxlength="12000" placeholder="Ask something. Make it weird." aria-label="Message"></textarea><button id="send" type="submit" aria-label="Send message">↗</button></div><div class="hint">ENTER TO SEND · SHIFT + ENTER FOR NEW LINE</div></form>
-</section>
-</main>
+
 <script>
 (() => {
   const form = document.querySelector("#chatForm");
@@ -429,14 +906,51 @@ textarea:focus-visible {
   const providerSelect = document.querySelector("#providerSelect");
   const baseUrlInput = document.querySelector("#baseUrl");
   const modelNameInput = document.querySelector("#modelName");
+  const openSettingsBtn = document.querySelector("#openSettings");
+  const closeSettingsBtn = document.querySelector("#closeSettings");
+  const settingsDrawer = document.querySelector("#settingsDrawer");
+  const drawerOverlay = document.querySelector("#drawerOverlay");
+
+  // Settings Drawer Toggle
+  function openDrawer() {
+    settingsDrawer.classList.add("open");
+    drawerOverlay.classList.add("open");
+    settingsDrawer.setAttribute("aria-hidden", "false");
+    drawerOverlay.setAttribute("aria-hidden", "false");
+  }
+
+  function closeDrawer() {
+    settingsDrawer.classList.remove("open");
+    drawerOverlay.classList.remove("open");
+    settingsDrawer.setAttribute("aria-hidden", "true");
+    drawerOverlay.setAttribute("aria-hidden", "true");
+  }
+
+  openSettingsBtn.addEventListener("click", openDrawer);
+  closeSettingsBtn.addEventListener("click", closeDrawer);
+  drawerOverlay.addEventListener("click", closeDrawer);
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && settingsDrawer.classList.contains("open")) {
+      closeDrawer();
+    }
+  });
+
+  // Stored state management
   const providerKeys = (() => {
     try { return JSON.parse(sessionStorage.getItem("braincellgpt_provider_keys") || "{}"); }
     catch { return {}; }
   })();
+
   providerSelect.value = sessionStorage.getItem("braincellgpt_provider") || "groq";
+  personality.value = sessionStorage.getItem("braincellgpt_personality") || "sarcastic";
   apiKeyInput.value = providerKeys[providerSelect.value] || "";
   if (baseUrlInput) baseUrlInput.value = sessionStorage.getItem("braincellgpt_base_url") || "";
   if (modelNameInput) modelNameInput.value = sessionStorage.getItem("braincellgpt_model") || "";
+
+  personality.addEventListener("change", () => {
+    sessionStorage.setItem("braincellgpt_personality", personality.value);
+  });
+
   function updateProviderFields() {
     const provider = providerSelect.value;
     document.querySelector("#customFields").hidden = !["custom", "ollama", "lmstudio"].includes(provider);
@@ -444,10 +958,16 @@ textarea:focus-visible {
     baseUrlInput.placeholder = provider === "ollama" ? "http://localhost:11434/v1" : provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.example.com/v1";
     modelNameInput.placeholder = provider === "ollama" ? "e.g. llama3.2" : provider === "lmstudio" ? "Model ID shown in LM Studio" : "Use provider default or enter model ID";
     apiKeyInput.placeholder = ["ollama", "lmstudio"].includes(provider) ? "Usually not required" : "Optional — leave blank to use .env";
-    apiKeyStatus.textContent = provider === "ollama" ? "Ollama must be running on this machine. Default URL: http://localhost:11434/v1" : provider === "lmstudio" ? "LM Studio local server must be enabled. Default URL: http://localhost:1234/v1" : provider === "custom" ? "Custom OpenAI-compatible API. Enter URL/model here or set CUSTOM_API_BASE_URL, CUSTOM_MODEL, and optional CUSTOM_API_KEY in .env. Leave the key blank to use the environment key." : "API key is optional when the selected provider has a key in .env. A key entered here overrides the environment key.";
+    apiKeyStatus.textContent = provider === "ollama" ? "Ollama must be running on this machine. Default URL: http://localhost:11434/v1" : provider === "lmstudio" ? "LM Studio local server must be enabled. Default URL: http://localhost:1234/v1" : provider === "custom" ? "Custom OpenAI-compatible API. Enter URL/model here or set CUSTOM_API_BASE_URL, CUSTOM_MODEL, and optional CUSTOM_API_KEY in .env." : "API key is optional when the selected provider has a key in .env. A key entered here overrides the environment key.";
   }
-  providerSelect.addEventListener("change", () => { sessionStorage.setItem("braincellgpt_provider", providerSelect.value); apiKeyInput.value = providerKeys[providerSelect.value] || ""; updateProviderFields(); });
+
+  providerSelect.addEventListener("change", () => {
+    sessionStorage.setItem("braincellgpt_provider", providerSelect.value);
+    apiKeyInput.value = providerKeys[providerSelect.value] || "";
+    updateProviderFields();
+  });
   updateProviderFields();
+
   let history = [];
   let busy = false;
 
@@ -455,20 +975,32 @@ textarea:focus-visible {
     welcome.hidden = true;
     const article = document.createElement("article");
     article.className = "message " + role;
-    const avatar = document.createElement("div");
-    avatar.className = "avatar";
-    avatar.textContent = role === "user" ? "YOU" : "BC";
-    const body = document.createElement("div");
-    const label = document.createElement("div");
-    label.className = "message-label";
-    label.textContent = role === "user" ? "YOU" : "BRAINCELLGPT";
+    
+    const meta = document.createElement("div");
+    meta.className = "message-meta";
+    
+    const sender = document.createElement("span");
+    sender.className = "message-sender";
+    sender.textContent = role === "user" ? "YOU" : "BRAINCELLGPT";
+    
+    meta.appendChild(sender);
+
     const text = document.createElement("p");
+    text.className = "message-text";
     text.textContent = content;
-    body.append(label, text);
-    article.append(avatar, body);
-    messagesEl.append(article);
-    article.scrollIntoView({behavior:"smooth",block:"end"});
+
+    article.appendChild(meta);
+    article.appendChild(text);
+    messagesEl.appendChild(article);
+    article.scrollIntoView({ behavior: "smooth", block: "end" });
   }
+
+  function adjustTextareaHeight() {
+    input.style.height = "24px";
+    input.style.height = Math.min(input.scrollHeight, 180) + "px";
+  }
+
+  input.addEventListener("input", adjustTextareaHeight);
 
   async function sendMessage(text) {
     text = text.trim();
@@ -476,26 +1008,41 @@ textarea:focus-visible {
     busy = true;
     send.disabled = true;
     input.value = "";
+    adjustTextareaHeight();
+    errorEl.hidden = true;
     errorEl.textContent = "";
     addMessage("user", text);
     const prior = history.slice(-16);
-    history.push({role:"user",content:text});
+    history.push({ role: "user", content: text });
+    
     const thinking = document.createElement("div");
     thinking.className = "thinking";
-    thinking.textContent = "Thinking…";
-    messagesEl.append(thinking);
+    thinking.textContent = "thinking, allegedly…";
+    messagesEl.appendChild(thinking);
+    thinking.scrollIntoView({ behavior: "smooth", block: "end" });
+
     try {
       const response = await fetch("/api/chat", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({message:text,history:prior,personality:personality.value,provider:providerSelect.value,api_key:providerKeys[providerSelect.value] || apiKeyInput.value.trim(),base_url:baseUrlInput ? baseUrlInput.value.trim() : "",model:modelNameInput ? modelNameInput.value.trim() : ""})
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          history: prior,
+          personality: personality.value,
+          provider: providerSelect.value,
+          api_key: providerKeys[providerSelect.value] || apiKeyInput.value.trim(),
+          base_url: baseUrlInput ? baseUrlInput.value.trim() : "",
+          model: modelNameInput ? modelNameInput.value.trim() : ""
+        })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed. Try again.");
-      history.push({role:"assistant",content:data.reply});
-      addMessage("assistant",data.reply);
+      history.push({ role: "assistant", content: data.reply });
+      addMessage("assistant", data.reply);
     } catch (err) {
+      errorEl.hidden = false;
       errorEl.textContent = err instanceof Error ? err.message : "Something went wrong.";
+      errorEl.scrollIntoView({ behavior: "smooth", block: "end" });
     } finally {
       thinking.remove();
       busy = false;
@@ -514,7 +1061,7 @@ textarea:focus-visible {
     try {
       const response = await fetch("/api/test-connection", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: providerSelect.value,
           api_key: apiKeyInput.value.trim(),
@@ -536,48 +1083,64 @@ textarea:focus-visible {
       button.textContent = "Test connection";
     }
   });
+
   document.querySelector("#saveApiKey").addEventListener("click", () => {
     const key = apiKeyInput.value.trim();
     if (key) {
       providerKeys[providerSelect.value] = key;
       sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
       apiKeyStatus.dataset.state = "success";
-      apiKeyStatus.textContent = "Key saved in this tab. It is sent to your local server with chat requests.";
+      apiKeyStatus.textContent = "Key saved in this tab. Sent only with chat requests.";
     } else {
       delete providerKeys[providerSelect.value];
       sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
       apiKeyStatus.dataset.state = "";
-      apiKeyStatus.textContent = "Personal key cleared. The selected provider will use its .env key if configured.";
+      apiKeyStatus.textContent = "Personal key cleared. Uses .env key if configured.";
     }
   });
+
   document.querySelector("#clearApiKey").addEventListener("click", () => {
-    sessionStorage.removeItem("braincellgpt_provider_api_key");
-    sessionStorage.removeItem("braincellgpt_groq_api_key");
     delete providerKeys[providerSelect.value];
     sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
     apiKeyInput.value = "";
     apiKeyStatus.dataset.state = "";
-    apiKeyStatus.textContent = "Personal key cleared from this tab. The selected provider will use its .env key if configured.";
+    apiKeyStatus.textContent = "Personal key cleared from this tab. Uses .env key if configured.";
   });
+
   [baseUrlInput, modelNameInput].forEach(field => {
     if (field) field.addEventListener("change", () => {
       if (baseUrlInput) sessionStorage.setItem("braincellgpt_base_url", baseUrlInput.value.trim());
       if (modelNameInput) sessionStorage.setItem("braincellgpt_model", modelNameInput.value.trim());
     });
   });
-  form.addEventListener("submit", event => { event.preventDefault(); sendMessage(input.value); });
-  input.addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); form.requestSubmit(); }
+
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    sendMessage(input.value);
   });
+
+  input.addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
   document.querySelector("#newChat").addEventListener("click", () => {
     history = [];
     messagesEl.replaceChildren();
+    errorEl.hidden = true;
     errorEl.textContent = "";
     welcome.hidden = false;
     input.focus();
   });
+
   document.querySelectorAll("[data-prompt]").forEach(button => {
-    button.addEventListener("click", () => { input.value = button.dataset.prompt; input.focus(); });
+    button.addEventListener("click", () => {
+      input.value = button.dataset.prompt;
+      adjustTextareaHeight();
+      input.focus();
+    });
   });
 })();
 </script>
