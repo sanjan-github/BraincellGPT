@@ -81,62 +81,35 @@ load_dotenv()
 PORT = int(os.environ.get("PORT", "8000"))
 
 
+# Small provider registry: shared OpenAI-compatible request format, provider-specific defaults.
+# Native-protocol providers (currently Anthropic) and local/custom endpoints have dedicated paths below.
+OPENAI_COMPATIBLE_PROVIDERS = {
+    "groq": {"label": "Groq", "base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile", "env_key": "GROQ_API_KEY", "env_model": "GROQ_MODEL"},
+    "openai": {"label": "OpenAI", "base_url": "https://api.openai.com/v1", "model": "gpt-4.1-mini"},
+    "openrouter": {"label": "OpenRouter", "base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini"},
+    "nvidia_nim": {"label": "NVIDIA NIM", "base_url": "https://integrate.api.nvidia.com/v1", "model": "meta/llama-3.3-70b-instruct"},
+    "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
+    "mistral": {"label": "Mistral", "base_url": "https://api.mistral.ai/v1", "model": "mistral-small-latest"},
+    "xai": {"label": "xAI", "base_url": "https://api.x.ai/v1", "model": "grok-3-mini"},
+    "together": {"label": "Together AI", "base_url": "https://api.together.xyz/v1", "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
+    "fireworks": {"label": "Fireworks AI", "base_url": "https://api.fireworks.ai/inference/v1", "model": "accounts/fireworks/models/llama-v3p3-70b-instruct"},
+    "cerebras": {"label": "Cerebras", "base_url": "https://api.cerebras.ai/v1", "model": "llama-3.3-70b"},
+}
+
+
 def generate_reply(message: str, history: list[dict], personality: str, provider: str = "groq", user_api_key: str = "", base_url: str = "", model_override: str = "") -> str:
     """Call Groq, Anthropic, Ollama, or an OpenAI-compatible endpoint."""
     provider = provider.strip().lower()
     api_key = user_api_key.strip()
     model = model_override.strip()
-    if provider == "groq":
-        api_key = api_key or os.environ.get("GROQ_API_KEY", "").strip()
-        model = model or os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
-        endpoint = "https://api.groq.com/openai/v1/chat/completions"
+    if provider in OPENAI_COMPATIBLE_PROVIDERS:
+        config = OPENAI_COMPATIBLE_PROVIDERS[provider]
+        api_key = api_key or os.environ.get(config.get("env_key", ""), "").strip()
+        if not model:
+            model = os.environ.get(config["env_model"], config["model"]) if config.get("env_model") else config["model"]
+        endpoint = config["base_url"] + "/chat/completions"
         protocol = "openai"
-        label = "Groq"
-    elif provider == "openai":
-        model = model or "gpt-4.1-mini"
-        endpoint = "https://api.openai.com/v1/chat/completions"
-        protocol = "openai"
-        label = "OpenAI"
-    elif provider == "openrouter":
-        model = model or "openai/gpt-4o-mini"
-        endpoint = "https://openrouter.ai/api/v1/chat/completions"
-        protocol = "openai"
-        label = "OpenRouter"
-    elif provider == "nvidia_nim":
-        model = model or "meta/llama-3.3-70b-instruct"
-        endpoint = "https://integrate.api.nvidia.com/v1/chat/completions"
-        protocol = "openai"
-        label = "NVIDIA NIM"
-    elif provider == "deepseek":
-        model = model or "deepseek-chat"
-        endpoint = "https://api.deepseek.com/chat/completions"
-        protocol = "openai"
-        label = "DeepSeek"
-    elif provider == "mistral":
-        model = model or "mistral-small-latest"
-        endpoint = "https://api.mistral.ai/v1/chat/completions"
-        protocol = "openai"
-        label = "Mistral"
-    elif provider == "xai":
-        model = model or "grok-3-mini"
-        endpoint = "https://api.x.ai/v1/chat/completions"
-        protocol = "openai"
-        label = "xAI"
-    elif provider == "together":
-        model = model or "meta-llama/Llama-3.3-70B-Instruct-Turbo"
-        endpoint = "https://api.together.xyz/v1/chat/completions"
-        protocol = "openai"
-        label = "Together AI"
-    elif provider == "fireworks":
-        model = model or "accounts/fireworks/models/llama-v3p3-70b-instruct"
-        endpoint = "https://api.fireworks.ai/inference/v1/chat/completions"
-        protocol = "openai"
-        label = "Fireworks AI"
-    elif provider == "cerebras":
-        model = model or "llama-3.3-70b"
-        endpoint = "https://api.cerebras.ai/v1/chat/completions"
-        protocol = "openai"
-        label = "Cerebras"
+        label = config["label"]
     elif provider == "lmstudio":
         base = validate_provider_url("lmstudio", base_url.strip() or "http://localhost:1234/v1")
         endpoint = base if base.endswith("/chat/completions") else base + "/chat/completions"
