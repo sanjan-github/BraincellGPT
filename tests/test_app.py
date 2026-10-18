@@ -1,4 +1,9 @@
+import io
+import json
+import os
 import unittest
+import urllib.error
+from unittest.mock import MagicMock, patch
 
 import app
 
@@ -32,6 +37,75 @@ class ProviderConfigurationTests(unittest.TestCase):
     def test_unknown_provider_fails_closed(self):
         with self.assertRaisesRegex(RuntimeError, "supported provider"):
             app.generate_reply("hello", [], "normal", provider="unknown-provider")
+
+
+class PersonalityPromptTests(unittest.TestCase):
+    def test_prompt_makes_chaos_the_core_identity(self):
+        prompt = app.build_system_prompt("normal")
+
+        self.assertIn("stress relief", prompt.lower())
+        self.assertIn("chaotic", prompt.lower())
+        self.assertIn("actual message", prompt.lower())
+        self.assertIn("context", prompt.lower())
+
+    def test_prompt_discourages_generic_assistant_behaviour(self):
+        prompt = app.build_system_prompt("sarcastic")
+
+        self.assertIn("do not sound like a generic assistant", prompt.lower())
+        self.assertIn("do not overexplain jokes", prompt.lower())
+        self.assertIn("sarcastic", prompt.lower())
+
+
+class ApiReliabilityTests(unittest.TestCase):
+    def test_openai_compatible_request_uses_provider_defaults_and_auth_header(self):
+        response = MagicMock()
+        response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
+        response.__enter__.return_value = response
+
+        with patch("app.urllib.request.urlopen", return_value=response) as urlopen:
+            self.assertEqual(app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key"), "reply")
+
+        request = urlopen.call_args.args[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(request.full_url, "https://api.groq.com/openai/v1/chat/completions")
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret-key")
+        self.assertEqual(payload["model"], "llama-3.3-70b-versatile")
+        self.assertNotIn("secret-key", json.dumps(payload))
+
+    def test_blank_environment_model_uses_provider_default(self):
+        response = MagicMock()
+        response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
+        response.__enter__.return_value = response
+
+        with patch.dict(os.environ, {"GROQ_MODEL": ""}), patch("app.urllib.request.urlopen", return_value=response) as urlopen:
+            app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
+
+        payload = json.loads(urlopen.call_args.args[0].data.decode("utf-8"))
+        self.assertEqual(payload["model"], "llama-3.3-70b-versatile")
+
+    def test_invalid_provider_json_becomes_readable_runtime_error(self):
+        response = MagicMock()
+        response.read.return_value = b"not-json"
+        response.__enter__.return_value = response
+
+        with patch("app.urllib.request.urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "invalid JSON response"):
+                app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
+
+    def test_provider_http_error_redacts_api_key(self):
+        error = urllib.error.HTTPError(
+            "https://api.groq.com/openai/v1/chat/completions",
+            403,
+            "Forbidden",
+            {},
+            io.BytesIO(b'{"error":{"message":"bad secret-key"}}'),
+        )
+
+        with patch("app.urllib.request.urlopen", side_effect=error):
+            with self.assertRaisesRegex(RuntimeError, "Groq returned HTTP 403") as raised:
+                app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
+
+        self.assertNotIn("secret-key", str(raised.exception))
 
 
 if __name__ == "__main__":

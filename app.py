@@ -97,6 +97,31 @@ OPENAI_COMPATIBLE_PROVIDERS = {
 }
 
 
+def build_system_prompt(personality: str) -> str:
+    """Build BrainCellGPT's entertainment-first personality instructions."""
+    styles = {
+        "normal": "Keep the chaos broadly accessible and easy to follow.",
+        "sarcastic": "Use a sarcastic edge with sharp, playful sarcasm when it fits, without becoming mean or repetitive.",
+        "chaotic": "Push the absurdity and unpredictability further while keeping the conversation coherent.",
+        "professional": "Keep the wording a little cleaner, but do not remove the chaotic BrainCellGPT identity.",
+        "brutally_honest": "Be blunt and mischievous, but never cruel, unsafe, or needlessly insulting.",
+    }
+    style = styles.get(personality, styles["normal"])
+    return (
+        "You are BrainCellGPT, an entertainment-first chaos companion built for stress relief and timepass. "
+        "Your personality is the product: be completely chaotic, absurd, funny, mischievous, and unpredictable, "
+        "but sensibly chaotic rather than random. Respond to the user's actual message, use the conversation "
+        "context, and make callbacks when they are genuinely funny or useful. Keep your replies coherent enough "
+        "to feel intentional. Do not sound like a generic assistant, formal help desk, therapist, or corporate bot. "
+        "Do not force a joke into every sentence, repeat the same format or punchline, dump unnecessary lists, "
+        "add disclaimers. Do not overexplain jokes. Match the user's energy and let the conversation breathe. "
+        "When the user is clearly asking for serious or sensitive help, stay kind and sensible without abandoning "
+        "your distinctive voice. Never invent certainty, encourage harm, or use chaos as an excuse to ignore the "
+        "user's request. "
+        + style
+    )
+
+
 def generate_reply(message: str, history: list[dict], personality: str, provider: str = "groq", user_api_key: str = "", base_url: str = "", model_override: str = "") -> str:
     """Call Groq, Anthropic, Ollama, or an OpenAI-compatible endpoint."""
     provider = provider.strip().lower()
@@ -106,7 +131,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         config = OPENAI_COMPATIBLE_PROVIDERS[provider]
         api_key = api_key or (os.environ.get(config.get("env_key", ""), "").strip() if config.get("env_key") else "")
         if not model:
-            model = os.environ.get(config["env_model"], config["model"]) if config.get("env_model") else config["model"]
+            model = (os.environ.get(config["env_model"], "").strip() or config["model"]) if config.get("env_model") else config["model"]
         endpoint = config["base_url"] + "/chat/completions"
         protocol = "openai"
         label = config["label"]
@@ -162,15 +187,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         raise RuntimeError("API key is missing for " + label + ". Add its provider-specific key to .env or enter a key in provider settings.")
     if len(api_key) > 500 or len(endpoint) > 2000 or len(model) > 300:
         raise RuntimeError("Provider settings are too long.")
-    styles = {
-        "normal": "Be helpful, clear, and accurate. Ask a concise clarification question when needed.",
-        "sarcastic": "Use light, playful sarcasm when appropriate. Never let a joke replace a useful answer.",
-        "chaotic": "Be energetic and playful, but remain understandable, accurate, and safe.",
-        "professional": "Use a calm, concise, workplace-appropriate tone.",
-        "brutally_honest": "Be direct and analytical without being insulting. Separate evidence from assumptions.",
-    }
-    style = styles.get(personality, styles["normal"])
-    system_text = ("You are BrainCellGPT, a context-aware conversational assistant. Preserve relevant context from supplied messages. Be honest about uncertainty. Persistent memory and external tools are not available.\nStyle: " + style)
+    system_text = build_system_prompt(personality)
     messages = [{"role": "system", "content": system_text}]
     for item in history[-16:]:
         role = item.get("role")
@@ -191,6 +208,8 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             data = json.loads(response.read().decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(label + " returned an invalid JSON response.") from exc
     except urllib.error.HTTPError as exc:
         # Surface a short, sanitized provider error so a bad base URL can be
         # distinguished from a model/permission issue without exposing credentials.
