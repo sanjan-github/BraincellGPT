@@ -46,9 +46,9 @@ def validate_provider_url(provider: str, value: str) -> str:
     parsed = urlsplit(raw)
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise RuntimeError("Provider URL must not contain credentials, query strings, or fragments.")
-    if provider == "ollama":
+    if provider in ("ollama", "lmstudio"):
         if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
-            raise RuntimeError("Ollama URL must use HTTP and point to localhost on this machine.")
+            raise RuntimeError("Local model URLs must use HTTP and point to localhost on this machine.")
         return raw.rstrip("/")
     if parsed.scheme != "https" or not parsed.hostname:
         raise RuntimeError("Custom provider URLs must use HTTPS.")
@@ -107,6 +107,43 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         endpoint = "https://integrate.api.nvidia.com/v1/chat/completions"
         protocol = "openai"
         label = "NVIDIA NIM"
+    elif provider == "deepseek":
+        model = model or "deepseek-chat"
+        endpoint = "https://api.deepseek.com/chat/completions"
+        protocol = "openai"
+        label = "DeepSeek"
+    elif provider == "mistral":
+        model = model or "mistral-small-latest"
+        endpoint = "https://api.mistral.ai/v1/chat/completions"
+        protocol = "openai"
+        label = "Mistral"
+    elif provider == "xai":
+        model = model or "grok-3-mini"
+        endpoint = "https://api.x.ai/v1/chat/completions"
+        protocol = "openai"
+        label = "xAI"
+    elif provider == "together":
+        model = model or "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+        endpoint = "https://api.together.xyz/v1/chat/completions"
+        protocol = "openai"
+        label = "Together AI"
+    elif provider == "fireworks":
+        model = model or "accounts/fireworks/models/llama-v3p3-70b-instruct"
+        endpoint = "https://api.fireworks.ai/inference/v1/chat/completions"
+        protocol = "openai"
+        label = "Fireworks AI"
+    elif provider == "cerebras":
+        model = model or "llama-3.3-70b"
+        endpoint = "https://api.cerebras.ai/v1/chat/completions"
+        protocol = "openai"
+        label = "Cerebras"
+    elif provider == "lmstudio":
+        base = validate_provider_url("lmstudio", base_url.strip() or "http://localhost:1234/v1")
+        endpoint = base if base.endswith("/chat/completions") else base + "/chat/completions"
+        model = model or "local-model"
+        protocol = "openai"
+        label = "LM Studio"
+        api_key = api_key or "lm-studio"
     elif provider == "ollama":
         base = validate_provider_url("ollama", base_url.strip() or "http://localhost:11434/v1")
         endpoint = base if base.endswith("/chat/completions") else base + "/chat/completions"
@@ -132,7 +169,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         label = "Anthropic"
     else:
         raise RuntimeError("Choose a supported provider.")
-    if not api_key and provider != "ollama":
+    if not api_key and provider not in ("ollama", "lmstudio"):
         raise RuntimeError("API key is missing. Enter your key in provider settings.")
     if len(api_key) > 500 or len(endpoint) > 2000 or len(model) > 300:
         raise RuntimeError("Provider settings are too long.")
@@ -212,7 +249,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             file_path = WEB_DIR / "index.html"
         elif path == "/health":
-            self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": ["groq", "openai", "anthropic", "openrouter", "nvidia_nim", "ollama", "custom"]})
+            self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": ["groq", "openai", "anthropic", "openrouter", "nvidia_nim", "deepseek", "mistral", "xai", "together", "fireworks", "cerebras", "ollama", "lmstudio", "custom"]})
             return
         else:
             self.send_json(404, {"error": "Not found"})
