@@ -22,6 +22,13 @@ jobs:
         run: python -m py_compile app.py
       - name: Verify web UI exists
         run: python -c "from pathlib import Path; assert Path('web/index.html').is_file(), 'web/index.html is missing'"
+      - name: Scan tracked files for common leaked secrets
+        shell: bash
+        run: |
+          if git grep -n -I -E 'gsk_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|nvapi-[A-Za-z0-9_-]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' -- ':!*.lock'; then
+            echo "Potential secret detected in tracked files. Remove it and rotate the credential."
+            exit 1
+          fi
       - name: Start server and run smoke tests
         run: |
           python app.py &
