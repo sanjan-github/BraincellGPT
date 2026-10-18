@@ -57,7 +57,7 @@ jobs:
           BODY=$(echo "$RESP" | head -1)
           [ "$STATUS" = "502" ] || { echo "Missing-key POST returned $STATUS, expected 502"; kill $SERVER_PID; exit 1; }
           # Confirm the response explains the missing configuration without exposing a real credential
-          echo "$BODY" | python -c "import sys,json; body=sys.stdin.read(); data=json.loads(body); error=data.get('error','').lower(); assert 'groq_api_key' in error and ('key' in error or 'configured' in error), 'Expected safe missing-key guidance'""
+          echo "$BODY" | python -c "import sys,json; body=sys.stdin.read(); data=json.loads(body); error=data.get('error','').lower(); assert 'groq_api_key' in error and ('key' in error or 'configured' in error), 'Expected safe missing-key guidance'"
 
           kill $SERVER_PID
           echo "All smoke tests passed."
