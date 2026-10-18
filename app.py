@@ -85,15 +85,15 @@ PORT = int(os.environ.get("PORT", "8000"))
 # Native-protocol providers (currently Anthropic) and local/custom endpoints have dedicated paths below.
 OPENAI_COMPATIBLE_PROVIDERS = {
     "groq": {"label": "Groq", "base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile", "env_key": "GROQ_API_KEY", "env_model": "GROQ_MODEL"},
-    "openai": {"label": "OpenAI", "base_url": "https://api.openai.com/v1", "model": "gpt-4.1-mini"},
-    "openrouter": {"label": "OpenRouter", "base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini"},
-    "nvidia_nim": {"label": "NVIDIA NIM", "base_url": "https://integrate.api.nvidia.com/v1", "model": "meta/llama-3.3-70b-instruct"},
-    "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
-    "mistral": {"label": "Mistral", "base_url": "https://api.mistral.ai/v1", "model": "mistral-small-latest"},
-    "xai": {"label": "xAI", "base_url": "https://api.x.ai/v1", "model": "grok-3-mini"},
-    "together": {"label": "Together AI", "base_url": "https://api.together.xyz/v1", "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
-    "fireworks": {"label": "Fireworks AI", "base_url": "https://api.fireworks.ai/inference/v1", "model": "accounts/fireworks/models/llama-v3p3-70b-instruct"},
-    "cerebras": {"label": "Cerebras", "base_url": "https://api.cerebras.ai/v1", "model": "llama-3.3-70b"},
+    "openai": {"label": "OpenAI", "base_url": "https://api.openai.com/v1", "model": "gpt-4.1-mini", "env_key": "OPENAI_API_KEY", "env_model": "OPENAI_MODEL"},
+    "openrouter": {"label": "OpenRouter", "base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini", "env_key": "OPENROUTER_API_KEY", "env_model": "OPENROUTER_MODEL"},
+    "nvidia_nim": {"label": "NVIDIA NIM", "base_url": "https://integrate.api.nvidia.com/v1", "model": "meta/llama-3.3-70b-instruct", "env_key": "NVIDIA_NIM_API_KEY", "env_model": "NVIDIA_NIM_MODEL"},
+    "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com", "model": "deepseek-chat", "env_key": "DEEPSEEK_API_KEY", "env_model": "DEEPSEEK_MODEL"},
+    "mistral": {"label": "Mistral", "base_url": "https://api.mistral.ai/v1", "model": "mistral-small-latest", "env_key": "MISTRAL_API_KEY", "env_model": "MISTRAL_MODEL"},
+    "xai": {"label": "xAI", "base_url": "https://api.x.ai/v1", "model": "grok-3-mini", "env_key": "XAI_API_KEY", "env_model": "XAI_MODEL"},
+    "together": {"label": "Together AI", "base_url": "https://api.together.xyz/v1", "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo", "env_key": "TOGETHER_API_KEY", "env_model": "TOGETHER_MODEL"},
+    "fireworks": {"label": "Fireworks AI", "base_url": "https://api.fireworks.ai/inference/v1", "model": "accounts/fireworks/models/llama-v3p3-70b-instruct", "env_key": "FIREWORKS_API_KEY", "env_model": "FIREWORKS_MODEL"},
+    "cerebras": {"label": "Cerebras", "base_url": "https://api.cerebras.ai/v1", "model": "llama-3.3-70b", "env_key": "CEREBRAS_API_KEY", "env_model": "CEREBRAS_MODEL"},
 }
 
 
@@ -104,7 +104,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     model = model_override.strip()
     if provider in OPENAI_COMPATIBLE_PROVIDERS:
         config = OPENAI_COMPATIBLE_PROVIDERS[provider]
-        api_key = api_key or os.environ.get(config.get("env_key", ""), "").strip()
+        api_key = api_key or (os.environ.get(config.get("env_key", ""), "").strip() if config.get("env_key") else "")
         if not model:
             model = os.environ.get(config["env_model"], config["model"]) if config.get("env_model") else config["model"]
         endpoint = config["base_url"] + "/chat/completions"
@@ -125,13 +125,17 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         label = "Ollama"
         api_key = api_key or "ollama"
     elif provider == "custom":
-        if not base_url.strip():
-            raise RuntimeError("Enter the API base URL for your provider.")
-        endpoint = validate_provider_url("custom", base_url.strip())
+        # Custom API settings may be supplied by the UI or kept privately in .env.
+        base_url = base_url.strip() or os.environ.get("CUSTOM_API_BASE_URL", "").strip()
+        api_key = api_key or os.environ.get("CUSTOM_API_KEY", "").strip()
+        model = model or os.environ.get("CUSTOM_MODEL", "").strip()
+        if not base_url:
+            raise RuntimeError("Enter an API base URL, or set CUSTOM_API_BASE_URL in .env.")
+        endpoint = validate_provider_url("custom", base_url)
         if not endpoint.endswith("/chat/completions"):
             endpoint += "/chat/completions"
         if not model:
-            raise RuntimeError("Enter a model ID for your provider.")
+            raise RuntimeError("Enter a model ID, or set CUSTOM_MODEL in .env.")
         protocol = "openai"
         label = "Custom provider"
     elif provider == "anthropic":
