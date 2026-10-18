@@ -38,12 +38,15 @@ load_dotenv()
 PORT = int(os.environ.get("PORT", "8000"))
 
 
-def generate_reply(message: str, history: list[dict], personality: str) -> str:
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+def generate_reply(message: str, history: list[dict], personality: str, user_api_key: str = "") -> str:
+    # A key supplied in the UI is used only for this request and is never persisted by the server.
+    api_key = user_api_key.strip() or os.environ.get("GROQ_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError(
-            "GROQ_API_KEY is missing. Add it to a .env file in the project root."
+            "API key is missing. Enter your key in API Key settings, or add GROQ_API_KEY to .env."
         )
+    if len(api_key) > 500:
+        raise RuntimeError("The API key is too long.")
 
     styles = {
         "normal": "Be helpful, clear, and accurate. Ask a concise clarification question when needed.",
@@ -166,7 +169,12 @@ class Handler(BaseHTTPRequestHandler):
                 item for item in history[-16:]
                 if isinstance(item, dict) and item.get("role") in ("user", "assistant")
             ]
-            reply = generate_reply(message, history, str(payload.get("personality", "normal")))
+            user_api_key = payload.get("api_key", "")
+            if not isinstance(user_api_key, str):
+                user_api_key = ""
+            reply = generate_reply(
+                message, history, str(payload.get("personality", "normal")), user_api_key
+            )
             self.send_json(200, {"reply": reply})
         except json.JSONDecodeError:
             self.send_json(400, {"error": "Invalid JSON request."})
