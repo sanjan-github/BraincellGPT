@@ -75,7 +75,7 @@ body {
   text-align:left;
   cursor:pointer
 }
-.new-chat:hover,button:focus-visible,select:focus-visible,textarea:focus-visible {
+.new-chat:hover,button:focus-visible,select:focus-visible,textarea:focus-visible,#apiKey:focus-visible {
   outline:1px solid var(--lime);
   outline-offset:2px
 }
@@ -123,6 +123,43 @@ h1 {
   font-size:22px;
   letter-spacing:-.7px;
   margin:7px 0 0
+}
+.api-settings {
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  min-width:220px;
+  color:var(--muted);
+  font-size:10px;
+  letter-spacing:1px
+}
+.api-key-row {
+  display:flex;
+  gap:6px
+}
+#apiKey {
+  min-width:0;
+  width:190px;
+  background:#151922;
+  color:var(--text);
+  border:1px solid var(--line);
+  padding:9px 10px;
+  border-radius:8px;
+  font-size:12px
+}
+.api-key-row button {
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:#171c24;
+  color:var(--text);
+  padding:8px 10px;
+  cursor:pointer
+}
+.api-key-note {
+  font-size:10px;
+  letter-spacing:0;
+  line-height:1.5;
+  max-width:330px
 }
 .personality {
   display:flex;
@@ -357,6 +394,7 @@ textarea:focus-visible {
 <section class="workspace">
   <header class="topbar"><div><div class="eyebrow">CONVERSATIONAL AI LAB</div><h1>Let's see what breaks.</h1></div>
     <label class="personality">PERSONALITY<select id="personality"><option value="sarcastic">Sarcastic</option><option value="normal">Normal</option><option value="chaotic">Chaotic</option><option value="professional">Professional</option><option value="brutally_honest">Brutally honest</option></select></label>
+    <div class="api-settings"><label for="apiKey">YOUR GROQ API KEY</label><div class="api-key-row"><input id="apiKey" type="password" autocomplete="off" placeholder="gsk_..." aria-label="Your Groq API key"><button id="saveApiKey" type="button">Use key</button><button id="clearApiKey" type="button">Clear</button></div><div class="api-key-note" id="apiKeyStatus" role="status">Optional if a key is already configured in .env. Saved in this tab only.</div></div>
   </header>
   <section class="chat-area" id="chatArea" aria-live="polite">
     <div class="welcome" id="welcome"><div class="orbit">🧠</div><div class="eyebrow">BOOT SEQUENCE COMPLETE</div><h2>One brain cell.<br><span>Infinite confusion.</span></h2><p class="intro">A context-aware AI prototype. Try a follow-up, change the subject, then see whether it remembers the thread.</p><div class="suggestions"><button data-prompt="Remember this: our project is BrainCellGPT.">Test context retention ↗</button><button data-prompt="Then do it.">Test ambiguity ↗</button></div></div>
@@ -374,6 +412,11 @@ textarea:focus-visible {
   const welcome = document.querySelector("#welcome");
   const errorEl = document.querySelector("#error");
   const personality = document.querySelector("#personality");
+  const apiKeyInput = document.querySelector("#apiKey");
+  const apiKeyStatus = document.querySelector("#apiKeyStatus");
+  const savedKey = sessionStorage.getItem("braincellgpt_groq_api_key") || "";
+  apiKeyInput.value = savedKey;
+  apiKeyStatus.textContent = savedKey ? "Your key is saved in this tab and will be used for chat requests." : "Optional if a key is already configured in .env. Saved in this tab only.";
   let history = [];
   let busy = false;
 
@@ -414,7 +457,7 @@ textarea:focus-visible {
       const response = await fetch("/api/chat", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({message:text,history:prior,personality:personality.value})
+        body:JSON.stringify({message:text,history:prior,personality:personality.value,api_key:sessionStorage.getItem("braincellgpt_groq_api_key") || ""})
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed. Try again.");
@@ -430,6 +473,21 @@ textarea:focus-visible {
     }
   }
 
+  document.querySelector("#saveApiKey").addEventListener("click", () => {
+    const key = apiKeyInput.value.trim();
+    if (key) {
+      sessionStorage.setItem("braincellgpt_groq_api_key", key);
+      apiKeyStatus.textContent = "Key saved in this tab. It is sent to your BrainCellGPT server only when you chat.";
+    } else {
+      sessionStorage.removeItem("braincellgpt_groq_api_key");
+      apiKeyStatus.textContent = "No personal key saved. The server will use GROQ_API_KEY from .env, if configured.";
+    }
+  });
+  document.querySelector("#clearApiKey").addEventListener("click", () => {
+    sessionStorage.removeItem("braincellgpt_groq_api_key");
+    apiKeyInput.value = "";
+    apiKeyStatus.textContent = "Personal key cleared from this tab.";
+  });
   form.addEventListener("submit", event => { event.preventDefault(); sendMessage(input.value); });
   input.addEventListener("keydown", event => {
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); form.requestSubmit(); }
