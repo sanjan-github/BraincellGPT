@@ -439,7 +439,7 @@ textarea:focus-visible {
     apiKeyInput.placeholder = provider === "ollama" ? "Usually not required" : "Paste your provider key";
     apiKeyStatus.textContent = provider === "ollama" ? "Ollama must be running on the machine running BrainCellGPT. Default URL: http://localhost:11434/v1" : provider === "custom" ? "Enter a compatible API base URL and model ID. Most providers use a URL ending in /v1." : "Use your own provider key. Groq can fall back to GROQ_API_KEY in .env.";
   }
-  providerSelect.addEventListener("change", () => { sessionStorage.setItem("braincellgpt_provider", providerSelect.value); updateProviderFields(); });
+  providerSelect.addEventListener("change", () => { sessionStorage.setItem("braincellgpt_provider", providerSelect.value); apiKeyInput.value = providerKeys[providerSelect.value] || ""; updateProviderFields(); });
   updateProviderFields();
   let history = [];
   let busy = false;
