@@ -405,8 +405,8 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self.send_json(500, {"error": "Unexpected server error. Check the terminal for details."})
 
-    def log_message(self, fmt: str, *args) -> None:
-        print(f"[BrainCellGPT] {self.address_string()} - {fmt % args}")
+    def log_message(self, format: str, *args) -> None:
+        print(f"[BrainCellGPT] {self.address_string()} - {format % args}")
 
 
 def main() -> None:
