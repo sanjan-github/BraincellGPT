@@ -11,11 +11,54 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
+from collections import defaultdict, deque
+from threading import Lock
+import time
+import ipaddress
+import socket
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
 HOST = "127.0.0.1"
+RATE_LIMIT = 20
+RATE_WINDOW_SECONDS = 60
+_rate_events: dict[str, deque[float]] = defaultdict(deque)
+_rate_lock = Lock()
+
+
+def rate_limited(client_ip: str) -> bool:
+    now = time.monotonic()
+    with _rate_lock:
+        events = _rate_events[client_ip]
+        while events and now - events[0] > RATE_WINDOW_SECONDS:
+            events.popleft()
+        if len(events) >= RATE_LIMIT:
+            return True
+        events.append(now)
+        return False
+
+
+def validate_provider_url(provider: str, value: str) -> str:
+    raw = value.strip()
+    if len(raw) > 2000:
+        raise RuntimeError("Provider URL is too long.")
+    parsed = urlsplit(raw)
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise RuntimeError("Provider URL must not contain credentials, query strings, or fragments.")
+    if provider == "ollama":
+        if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+            raise RuntimeError("Ollama URL must use HTTP and point to localhost on this machine.")
+        return raw.rstrip("/")
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise RuntimeError("Custom provider URLs must use HTTPS.")
+    try:
+        addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)}
+        if any(not address.is_global for address in addresses):
+            raise RuntimeError("Custom provider URL cannot resolve to a private or local network address.")
+    except socket.gaierror as exc:
+        raise RuntimeError("Could not resolve the custom provider host.") from exc
+    return raw.rstrip("/")
 
 
 def load_dotenv() -> None:
@@ -65,7 +108,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         protocol = "openai"
         label = "NVIDIA NIM"
     elif provider == "ollama":
-        base = (base_url.strip() or "http://localhost:11434/v1").rstrip("/")
+        base = validate_provider_url("ollama", base_url.strip() or "http://localhost:11434/v1")
         endpoint = base if base.endswith("/chat/completions") else base + "/chat/completions"
         model = model or "llama3.2"
         protocol = "openai"
@@ -74,7 +117,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     elif provider == "custom":
         if not base_url.strip():
             raise RuntimeError("Enter the API base URL for your provider.")
-        endpoint = base_url.strip().rstrip("/")
+        endpoint = validate_provider_url("custom", base_url.strip())
         if not endpoint.endswith("/chat/completions"):
             endpoint += "/chat/completions"
         if not model:
@@ -147,6 +190,14 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
 class Handler(BaseHTTPRequestHandler):
     server_version = "BrainCellGPT/0.1"
 
+    def end_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+        super().end_headers()
+
     def send_json(self, status: int, data: dict) -> None:
         body = json.dumps(data).encode("utf-8")
         self.send_response(status)
@@ -179,8 +230,18 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:
-        if urlparse(self.path).path != "/api/chat":
+        route = urlparse(self.path).path
+        if route not in ("/api/chat", "/api/test-connection"):
             self.send_json(404, {"error": "Not found"})
+            return
+        if self.client_address[0] not in ("127.0.0.1", "::1"):
+            self.send_json(403, {"error": "This local app only accepts requests from this computer."})
+            return
+        if rate_limited(self.client_address[0] + ":" + route):
+            self.send_json(429, {"error": "Too many requests. Wait a minute and try again."})
+            return
+        if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+            self.send_json(415, {"error": "Content-Type must be application/json."})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -188,7 +249,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(413, {"error": "Request body is empty or too large."})
                 return
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(payload, dict):
+                self.send_json(400, {"error": "Request body must be a JSON object."})
+                return
             message = str(payload.get("message", "")).strip()
+            if route == "/api/test-connection":
+                message = "Reply with exactly: connection successful"
             if not message:
                 self.send_json(400, {"error": "Type a message first."})
                 return
@@ -210,7 +276,10 @@ class Handler(BaseHTTPRequestHandler):
                 text_field("provider", "groq"), text_field("api_key"),
                 text_field("base_url"), text_field("model")
             )
-            self.send_json(200, {"reply": reply})
+            if route == "/api/test-connection":
+                self.send_json(200, {"ok": True, "message": "Connection successful.", "provider": text_field("provider", "groq")})
+            else:
+                self.send_json(200, {"reply": reply})
         except json.JSONDecodeError:
             self.send_json(400, {"error": "Invalid JSON request."})
         except RuntimeError as exc:
