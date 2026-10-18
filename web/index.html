@@ -444,7 +444,7 @@ textarea:focus-visible {
     baseUrlInput.placeholder = provider === "ollama" ? "http://localhost:11434/v1" : provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.example.com/v1";
     modelNameInput.placeholder = provider === "ollama" ? "e.g. llama3.2" : provider === "lmstudio" ? "Model ID shown in LM Studio" : "Use provider default or enter model ID";
     apiKeyInput.placeholder = ["ollama", "lmstudio"].includes(provider) ? "Usually not required" : "Optional — leave blank to use .env";
-    apiKeyStatus.textContent = provider === "ollama" ? "Ollama must be running on this machine. Default URL: http://localhost:11434/v1" : provider === "lmstudio" ? "LM Studio local server must be enabled. Default URL: http://localhost:1234/v1" : provider === "custom" ? "Enter a compatible API base URL and model ID. Most providers use a URL ending in /v1." : "Use your own provider key. Groq and Anthropic can fall back to environment variables.";
+    apiKeyStatus.textContent = provider === "ollama" ? "Ollama must be running on this machine. Default URL: http://localhost:11434/v1" : provider === "lmstudio" ? "LM Studio local server must be enabled. Default URL: http://localhost:1234/v1" : provider === "custom" ? "Custom OpenAI-compatible API. Enter URL/model here or set CUSTOM_API_BASE_URL, CUSTOM_MODEL, and optional CUSTOM_API_KEY in .env. Leave the key blank to use the environment key." : "API key is optional when the selected provider has a key in .env. A key entered here overrides the environment key.";
   }
   providerSelect.addEventListener("change", () => { sessionStorage.setItem("braincellgpt_provider", providerSelect.value); apiKeyInput.value = providerKeys[providerSelect.value] || ""; updateProviderFields(); });
   updateProviderFields();
@@ -547,7 +547,7 @@ textarea:focus-visible {
       delete providerKeys[providerSelect.value];
       sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
       apiKeyStatus.dataset.state = "";
-      apiKeyStatus.textContent = "Personal key cleared. Groq can fall back to GROQ_API_KEY from .env.";
+      apiKeyStatus.textContent = "Personal key cleared. The selected provider will use its .env key if configured.";
     }
   });
   document.querySelector("#clearApiKey").addEventListener("click", () => {
@@ -557,7 +557,7 @@ textarea:focus-visible {
     sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
     apiKeyInput.value = "";
     apiKeyStatus.dataset.state = "";
-    apiKeyStatus.textContent = "Personal key cleared from this tab.";
+    apiKeyStatus.textContent = "Personal key cleared from this tab. The selected provider will use its .env key if configured.";
   });
   [baseUrlInput, modelNameInput].forEach(field => {
     if (field) field.addEventListener("change", () => {
