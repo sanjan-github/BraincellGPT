@@ -196,7 +196,12 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         suffix = " Provider detail: " + detail if detail else ""
         if provider == "nvidia_nim" and exc.code == 403:
             raise RuntimeError(
-                "NVIDIA NIM returned HTTP 403: Authorization failed. The API endpoint and model ID can be correct while your NVIDIA account still lacks hosted inference access. Confirm the key was generated in NVIDIA Build and try the model in its Playground. If Playground works but this API call fails, ask NVIDIA support to check Public API Endpoints / hosted NIM inference access for your account."
+                "NVIDIA NIM returned HTTP 403: Authorization failed. The API endpoint and model ID can be correct while your NVIDIA account still lacks hosted inference access. Confirm the key was generated in NVIDIA Build and try the model in its Playground. If Playground works but this API call fails, ask NVIDIA support to check hosted NIM inference access for your account."
+                + suffix
+            ) from exc
+        if provider == "groq" and exc.code == 403:
+            raise RuntimeError(
+                "Groq returned HTTP 403. The key may be valid, but this model can be blocked by your Groq organization/project permissions. In Groq Console, check Settings → Organization → Limits and Settings → Projects → Limits. The model ID openai/gpt-oss-120b is a supported Groq model; try the default llama-3.3-70b-versatile to see whether the restriction is specific to GPT-OSS. If the provider detail below names a different cause, follow that message."
                 + suffix
             ) from exc
         if exc.code in (400, 401, 403):
