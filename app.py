@@ -23,6 +23,9 @@ WEB_DIR = ROOT / "web"
 HOST = "127.0.0.1"
 RATE_LIMIT = 20
 RATE_WINDOW_SECONDS = 60
+MAX_HISTORY_MESSAGES = 16
+MAX_HISTORY_CHARS = 24000
+MAX_HISTORY_ITEM_CHARS = 6000
 _rate_events: dict[str, deque[float]] = defaultdict(deque)
 _rate_lock = Lock()
 
@@ -37,6 +40,29 @@ def rate_limited(client_ip: str) -> bool:
             return True
         events.append(now)
         return False
+
+
+def trim_history(history: list[dict], max_items: int = MAX_HISTORY_MESSAGES, max_chars: int = MAX_HISTORY_CHARS, max_item_chars: int = MAX_HISTORY_ITEM_CHARS) -> list[dict]:
+    """Keep the newest valid messages within item and total prompt-size limits."""
+    trimmed: list[dict] = []
+    total_chars = 0
+    for item in reversed(history):
+        if not isinstance(item, dict) or item.get("role") not in ("user", "assistant"):
+            continue
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+        content = content[-max_item_chars:]
+        remaining = max_chars - total_chars
+        if remaining <= 0:
+            break
+        if len(content) > remaining:
+            content = content[-remaining:]
+        trimmed.append({"role": item["role"], "content": content})
+        total_chars += len(content)
+        if len(trimmed) >= max_items:
+            break
+    return list(reversed(trimmed))
 
 
 def validate_provider_url(provider: str, value: str) -> str:
@@ -189,11 +215,8 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         raise RuntimeError("Provider settings are too long.")
     system_text = build_system_prompt(personality)
     messages = [{"role": "system", "content": system_text}]
-    for item in history[-16:]:
-        role = item.get("role")
-        content = str(item.get("content", ""))[:12000]
-        if role in ("user", "assistant") and content:
-            messages.append({"role": role, "content": content})
+    for item in trim_history(history):
+        messages.append(item)
     messages.append({"role": "user", "content": message})
     headers = {"Content-Type": "application/json"}
     if protocol == "anthropic":
@@ -341,10 +364,7 @@ class Handler(BaseHTTPRequestHandler):
             history = payload.get("history", [])
             if not isinstance(history, list):
                 history = []
-            history = [
-                item for item in history[-16:]
-                if isinstance(item, dict) and item.get("role") in ("user", "assistant")
-            ]
+            history = trim_history(history)
             def text_field(name: str, default: str = "") -> str:
                 value = payload.get(name, default)
                 return value if isinstance(value, str) else default

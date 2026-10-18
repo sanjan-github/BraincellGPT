@@ -108,5 +108,33 @@ class ApiReliabilityTests(unittest.TestCase):
         self.assertNotIn("secret-key", str(raised.exception))
 
 
+class ConversationMemoryTests(unittest.TestCase):
+    def test_trim_history_keeps_recent_context_within_item_and_total_limits(self):
+        history = [
+            {"role": "user", "content": "old context " + ("x" * 5000)},
+            {"role": "assistant", "content": "old reply " + ("y" * 5000)},
+            {"role": "user", "content": "latest context"},
+        ]
+
+        trimmed = app.trim_history(history, max_items=16, max_chars=100, max_item_chars=60)
+
+        self.assertLessEqual(sum(len(item["content"]) for item in trimmed), 100)
+        self.assertLessEqual(len(trimmed), 16)
+        self.assertEqual(trimmed[-1]["content"], "latest context")
+
+    def test_generate_reply_sends_bounded_history_to_provider(self):
+        response = MagicMock()
+        response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
+        response.__enter__.return_value = response
+        history = [{"role": "user", "content": "message " + ("z" * 5000)} for _ in range(16)]
+
+        with patch("app.urllib.request.urlopen", return_value=response) as urlopen:
+            app.generate_reply("latest", history, "normal", provider="groq", user_api_key="secret-key")
+
+        payload = json.loads(urlopen.call_args.args[0].data.decode("utf-8"))
+        history_messages = payload["messages"][1:-1]
+        self.assertLessEqual(sum(len(item["content"]) for item in history_messages), app.MAX_HISTORY_CHARS)
+
+
 if __name__ == "__main__":
     unittest.main()
