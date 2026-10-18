@@ -13,11 +13,13 @@ One Python file. One HTML file. One command to run it.
 
 ### 1 — Get a Groq API key
 
-Sign up at [console.groq.com](https://console.groq.com) and create a free API key.
+Sign up at [console.groq.com](https://console.groq.com) and create a Groq API key.
 
-### 2 — Configure the environment
+### 2 — Choose how to provide your key
 
-Copy `.env.example` to `.env` in the repository root:
+**Option A — Enter it in the app:** Start the server, enter your key in **Your Groq API Key**, then click **Use key**. The key is kept in that browser tab's session storage and sent to the app server only with chat requests. Use **Clear** to remove it.
+
+**Option B — Configure it locally:** Copy `.env.example` to `.env` in the repository root:
 
 ```powershell
 Copy-Item .env.example .env
@@ -30,6 +32,8 @@ GROQ_API_KEY=your_key_here
 GROQ_MODEL=llama-3.3-70b-versatile
 PORT=8000
 ```
+
+A key entered in the app takes precedence for that request. If no key is entered, the server falls back to `GROQ_API_KEY` from `.env`.
 
 ### 3 — Start the server
 
@@ -59,6 +63,8 @@ in the terminal. Stop the server with **Ctrl+C**.
 - Groq Chat Completions API integration (configurable model).
 - Five personalities: Normal, Sarcastic, Chaotic, Professional, and Brutally Honest.
 - Conversation context preserved within the current browser session.
+- Enter a personal Groq API key in the interface, use it for chat requests, or clear it.
+- Personal API keys stay in the current browser tab's session storage; the server does not save them.
 - Clear error messages for missing/rejected API keys, rate limits, and connection failures.
 - Health check at `GET /health`.
 - Mobile and desktop responsive layout.
@@ -67,7 +73,7 @@ in the terminal. Stop the server with **Ctrl+C**.
 
 ## Environment variables
 
-All variables are optional except `GROQ_API_KEY`. Set them in the root `.env` file.
+All variables are optional. You can provide a key in the app instead of configuring `GROQ_API_KEY` in the root `.env` file.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -95,8 +101,9 @@ All variables are optional except `GROQ_API_KEY`. Set them in the root `.env` fi
 - Keep the API contract: `POST /api/chat` for chat, `GET /health` for health checks.
 - Read the existing implementation before editing it. Do not rewrite working features unnecessarily.
 - Keep Groq as the model provider unless the project owner explicitly approves a change.
-- Read the API key from `GROQ_API_KEY` and the model from `GROQ_MODEL`. Never hardcode secrets.
-- Never expose API keys in browser JavaScript, logs, screenshots, commits, or documentation.
+- Read the fallback API key from `GROQ_API_KEY` and the model from `GROQ_MODEL`. Never hardcode secrets.
+- A user-entered key may be held in browser session storage and passed to the server only with chat requests. Never save it server-side or print it in logs, screenshots, commits, or documentation.
+- Explain that user-entered keys are sent to the BrainCellGPT server; do not recommend entering a key into an instance the user does not trust.
 - Handle provider errors without exposing credentials or authenticated request details.
 
 ### Make focused changes
@@ -146,9 +153,9 @@ This is a local development prototype, not a production-ready public service.
 
 ## Security
 
-Keep the real API key in the root `.env` file. Never commit it or expose it to browser code.
-The server binds to `127.0.0.1` by default. Do not expose the server publicly until authentication,
-rate limiting, input validation, and deployment security have been implemented and reviewed.
+You can enter a Groq API key in the interface; it is stored in the current tab's session storage and sent to the BrainCellGPT server with chat requests. The server does not persist the supplied key, and request logging does not include request bodies. Alternatively, keep the key in the root `.env` file. Never commit real keys.
+
+Only enter your key into an instance you trust. If you run someone else's hosted copy, that server receives the key and could modify its code to capture it. The server binds to `127.0.0.1` by default. Do not expose it publicly until authentication, rate limiting, input validation, and deployment security have been implemented and reviewed.
 
 ## Roadmap
 
