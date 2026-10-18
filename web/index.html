@@ -75,7 +75,7 @@ body {
   text-align:left;
   cursor:pointer
 }
-.new-chat:hover,button:focus-visible,select:focus-visible,textarea:focus-visible,#apiKey:focus-visible {
+.new-chat:hover,button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible,#apiKey:focus-visible {
   outline:1px solid var(--lime);
   outline-offset:2px
 }
@@ -137,9 +137,14 @@ h1 {
   display:flex;
   gap:6px
 }
-#apiKey {
+.provider-fields { min-width:250px; max-width:360px }
+.provider-fields label { display:block; margin-top:5px }
+.provider-fields select,.provider-fields input { width:100%; margin-top:5px }
+.provider-fields .api-key-row button { white-space:nowrap }
+.provider-fields .api-key-note { margin-top:5px }
+#apiKey,#baseUrl,#modelName {
   min-width:0;
-  width:190px;
+  width:100%;
   background:#151922;
   color:var(--text);
   border:1px solid var(--line);
@@ -394,7 +399,7 @@ textarea:focus-visible {
 <section class="workspace">
   <header class="topbar"><div><div class="eyebrow">CONVERSATIONAL AI LAB</div><h1>Let's see what breaks.</h1></div>
     <label class="personality">PERSONALITY<select id="personality"><option value="sarcastic">Sarcastic</option><option value="normal">Normal</option><option value="chaotic">Chaotic</option><option value="professional">Professional</option><option value="brutally_honest">Brutally honest</option></select></label>
-    <div class="api-settings"><label for="apiKey">YOUR GROQ API KEY</label><div class="api-key-row"><input id="apiKey" type="password" autocomplete="off" placeholder="gsk_..." aria-label="Your Groq API key"><button id="saveApiKey" type="button">Use key</button><button id="clearApiKey" type="button">Clear</button></div><div class="api-key-note" id="apiKeyStatus" role="status">Optional if a key is already configured in .env. Saved in this tab only.</div></div>
+    <div class="api-settings provider-fields"><label for="providerSelect">MODEL PROVIDER</label><select id="providerSelect"><option value="groq">Groq</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic Claude</option><option value="openrouter">OpenRouter</option><option value="nvidia_nim">NVIDIA NIM</option><option value="ollama">Ollama (local)</option><option value="custom">Custom OpenAI-compatible API</option></select><label for="apiKey">API KEY</label><input id="apiKey" type="password" autocomplete="off" placeholder="Paste your provider key" aria-label="Provider API key"><div class="api-key-row"><button id="saveApiKey" type="button">Use key</button><button id="clearApiKey" type="button">Clear</button></div><div id="customFields" hidden><label for="baseUrl">CUSTOM API BASE URL</label><input id="baseUrl" type="url" placeholder="https://api.example.com/v1"><label for="modelName">MODEL ID</label><input id="modelName" type="text" placeholder="model-id"></div><div class="api-key-note" id="apiKeyStatus" role="status">Settings stay in this browser tab. Keys are sent to the local server only with chat requests.</div></div>
   </header>
   <section class="chat-area" id="chatArea" aria-live="polite">
     <div class="welcome" id="welcome"><div class="orbit">🧠</div><div class="eyebrow">BOOT SEQUENCE COMPLETE</div><h2>One brain cell.<br><span>Infinite confusion.</span></h2><p class="intro">A context-aware AI prototype. Try a follow-up, change the subject, then see whether it remembers the thread.</p><div class="suggestions"><button data-prompt="Remember this: our project is BrainCellGPT.">Test context retention ↗</button><button data-prompt="Then do it.">Test ambiguity ↗</button></div></div>
@@ -414,9 +419,22 @@ textarea:focus-visible {
   const personality = document.querySelector("#personality");
   const apiKeyInput = document.querySelector("#apiKey");
   const apiKeyStatus = document.querySelector("#apiKeyStatus");
-  const savedKey = sessionStorage.getItem("braincellgpt_groq_api_key") || "";
+  const providerSelect = document.querySelector("#providerSelect");
+  const baseUrlInput = document.querySelector("#baseUrl");
+  const modelNameInput = document.querySelector("#modelName");
+  const savedKey = sessionStorage.getItem("braincellgpt_provider_api_key") || "";
   apiKeyInput.value = savedKey;
-  apiKeyStatus.textContent = savedKey ? "Your key is saved in this tab and will be used for chat requests." : "Optional if a key is already configured in .env. Saved in this tab only.";
+  providerSelect.value = sessionStorage.getItem("braincellgpt_provider") || "groq";
+  if (baseUrlInput) baseUrlInput.value = sessionStorage.getItem("braincellgpt_base_url") || "";
+  if (modelNameInput) modelNameInput.value = sessionStorage.getItem("braincellgpt_model") || "";
+  function updateProviderFields() {
+    const provider = providerSelect.value;
+    document.querySelector("#customFields").hidden = provider !== "custom";
+    apiKeyInput.placeholder = provider === "ollama" ? "Usually not required" : "Paste your provider key";
+    apiKeyStatus.textContent = provider === "ollama" ? "Ollama must be running on the machine running BrainCellGPT. Default URL: http://localhost:11434/v1" : provider === "custom" ? "Enter a compatible API base URL and model ID. Most providers use a URL ending in /v1." : "Use your own provider key. Groq can fall back to GROQ_API_KEY in .env.";
+  }
+  providerSelect.addEventListener("change", () => { sessionStorage.setItem("braincellgpt_provider", providerSelect.value); updateProviderFields(); });
+  updateProviderFields();
   let history = [];
   let busy = false;
 
@@ -457,7 +475,7 @@ textarea:focus-visible {
       const response = await fetch("/api/chat", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({message:text,history:prior,personality:personality.value,api_key:sessionStorage.getItem("braincellgpt_groq_api_key") || ""})
+        body:JSON.stringify({message:text,history:prior,personality:personality.value,provider:providerSelect.value,api_key:sessionStorage.getItem("braincellgpt_provider_api_key") || "",base_url:baseUrlInput ? baseUrlInput.value.trim() : "",model:modelNameInput ? modelNameInput.value.trim() : ""})
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed. Try again.");
@@ -476,17 +494,23 @@ textarea:focus-visible {
   document.querySelector("#saveApiKey").addEventListener("click", () => {
     const key = apiKeyInput.value.trim();
     if (key) {
-      sessionStorage.setItem("braincellgpt_groq_api_key", key);
-      apiKeyStatus.textContent = "Key saved in this tab. It is sent to your BrainCellGPT server only when you chat.";
+      sessionStorage.setItem("braincellgpt_provider_api_key", key);
+      apiKeyStatus.textContent = "Key saved in this tab and sent to your BrainCellGPT server only with chat requests.";
     } else {
-      sessionStorage.removeItem("braincellgpt_groq_api_key");
-      apiKeyStatus.textContent = "No personal key saved. The server will use GROQ_API_KEY from .env, if configured.";
+      sessionStorage.removeItem("braincellgpt_provider_api_key");
+      apiKeyStatus.textContent = "Personal key cleared. Groq can fall back to GROQ_API_KEY from .env.";
     }
   });
   document.querySelector("#clearApiKey").addEventListener("click", () => {
     sessionStorage.removeItem("braincellgpt_groq_api_key");
     apiKeyInput.value = "";
     apiKeyStatus.textContent = "Personal key cleared from this tab.";
+  });
+  [baseUrlInput, modelNameInput].forEach(field => {
+    if (field) field.addEventListener("change", () => {
+      if (baseUrlInput) sessionStorage.setItem("braincellgpt_base_url", baseUrlInput.value.trim());
+      if (modelNameInput) sessionStorage.setItem("braincellgpt_model", modelNameInput.value.trim());
+    });
   });
   form.addEventListener("submit", event => { event.preventDefault(); sendMessage(input.value); });
   input.addEventListener("keydown", event => {
