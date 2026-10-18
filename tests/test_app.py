@@ -156,5 +156,38 @@ class ProviderResponseTests(unittest.TestCase):
             app.extract_provider_reply({"choices": []}, "openai", "Groq")
 
 
+class ModelCompatibilityTests(unittest.TestCase):
+    def test_anthropic_uses_native_headers_and_separate_system_prompt(self):
+        response = MagicMock()
+        response.read.return_value = b'{"content":[{"type":"text","text":"reply"}]}'
+        response.__enter__.return_value = response
+
+        with patch("app.urllib.request.urlopen", return_value=response) as urlopen:
+            self.assertEqual(app.generate_reply("hello", [], "normal", provider="anthropic", user_api_key="secret-key"), "reply")
+
+        request = urlopen.call_args.args[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(request.full_url, "https://api.anthropic.com/v1/messages")
+        self.assertEqual(request.get_header("X-api-key"), "secret-key")
+        self.assertEqual(request.get_header("Anthropic-version"), "2023-06-01")
+        self.assertNotIn("Authorization", dict(request.header_items()))
+        self.assertIn("system", payload)
+        self.assertNotIn("system", {message["role"] for message in payload["messages"]})
+
+    def test_ollama_uses_local_openai_compatible_endpoint_without_auth(self):
+        response = MagicMock()
+        response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
+        response.__enter__.return_value = response
+
+        with patch("app.urllib.request.urlopen", return_value=response) as urlopen:
+            self.assertEqual(app.generate_reply("hello", [], "normal", provider="ollama"), "reply")
+
+        request = urlopen.call_args.args[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(request.full_url, "http://localhost:11434/v1/chat/completions")
+        self.assertNotIn("Authorization", dict(request.header_items()))
+        self.assertEqual(payload["model"], "llama3.2")
+
+
 if __name__ == "__main__":
     unittest.main()

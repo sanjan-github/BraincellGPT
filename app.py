@@ -196,14 +196,14 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         model = model or "local-model"
         protocol = "openai"
         label = "LM Studio"
-        api_key = api_key or "lm-studio"
+        api_key = api_key or ""
     elif provider == "ollama":
         base = validate_provider_url("ollama", base_url.strip() or "http://localhost:11434/v1")
         endpoint = base if base.endswith("/chat/completions") else base + "/chat/completions"
         model = model or "llama3.2"
         protocol = "openai"
         label = "Ollama"
-        api_key = api_key or "ollama"
+        api_key = api_key or ""
     elif provider == "custom":
         # Custom API settings may be supplied by the UI or kept privately in .env.
         base_url = base_url.strip() or os.environ.get("CUSTOM_API_BASE_URL", "").strip()
