@@ -148,6 +148,35 @@ def build_system_prompt(personality: str) -> str:
     )
 
 
+def extract_provider_reply(data: object, protocol: str, label: str) -> str:
+    """Extract text from a provider response or raise a readable runtime error."""
+    if not isinstance(data, dict):
+        raise RuntimeError(label + " returned an invalid response.")
+    if protocol == "anthropic":
+        parts = data.get("content")
+        if not isinstance(parts, list):
+            raise RuntimeError(label + " returned an invalid response.")
+        reply = "".join(part.get("text", "") for part in parts if isinstance(part, dict) and part.get("type") == "text")
+    else:
+        choices = data.get("choices")
+        if not isinstance(choices, list):
+            raise RuntimeError(label + " returned an invalid response.")
+        reply = ""
+        if choices:
+            first_choice = choices[0]
+            message = first_choice.get("message") if isinstance(first_choice, dict) else None
+            if not isinstance(message, dict):
+                raise RuntimeError(label + " returned an invalid response.")
+            reply = message.get("content", "")
+            if isinstance(reply, list):
+                reply = "".join(part.get("text", "") for part in reply if isinstance(part, dict))
+            if not isinstance(reply, str):
+                raise RuntimeError(label + " returned an invalid response.")
+    if not reply.strip():
+        raise RuntimeError(label + " returned an empty response.")
+    return reply.strip()
+
+
 def generate_reply(message: str, history: list[dict], personality: str, provider: str = "groq", user_api_key: str = "", base_url: str = "", model_override: str = "") -> str:
     """Call Groq, Anthropic, Ollama, or an OpenAI-compatible endpoint."""
     provider = provider.strip().lower()
@@ -275,17 +304,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         raise RuntimeError(label + " returned HTTP " + str(exc.code) + "." + suffix) from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         raise RuntimeError("Could not reach " + label + ". Check your connection and endpoint URL.") from exc
-    if protocol == "anthropic":
-        parts = data.get("content", [])
-        reply = "".join(part.get("text", "") for part in parts if isinstance(part, dict) and part.get("type") == "text")
-    else:
-        choices = data.get("choices", [])
-        reply = choices[0].get("message", {}).get("content", "") if choices else ""
-        if isinstance(reply, list):
-            reply = "".join(part.get("text", "") for part in reply if isinstance(part, dict))
-    if not isinstance(reply, str) or not reply.strip():
-        raise RuntimeError(label + " returned an empty response.")
-    return reply.strip()
+    return extract_provider_reply(data, protocol, label)
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "BrainCellGPT/0.1"

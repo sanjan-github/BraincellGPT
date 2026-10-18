@@ -136,5 +136,25 @@ class ConversationMemoryTests(unittest.TestCase):
         self.assertLessEqual(sum(len(item["content"]) for item in history_messages), app.MAX_HISTORY_CHARS)
 
 
+class ProviderResponseTests(unittest.TestCase):
+    def test_extracts_openai_compatible_text_response(self):
+        data = {"choices": [{"message": {"content": "reply"}}]}
+
+        self.assertEqual(app.extract_provider_reply(data, "openai", "Groq"), "reply")
+
+    def test_extracts_anthropic_text_response(self):
+        data = {"content": [{"type": "text", "text": "reply"}]}
+
+        self.assertEqual(app.extract_provider_reply(data, "anthropic", "Anthropic"), "reply")
+
+    def test_rejects_non_object_provider_response(self):
+        with self.assertRaisesRegex(RuntimeError, "invalid response"):
+            app.extract_provider_reply([], "openai", "Groq")
+
+    def test_rejects_empty_provider_response(self):
+        with self.assertRaisesRegex(RuntimeError, "empty response"):
+            app.extract_provider_reply({"choices": []}, "openai", "Groq")
+
+
 if __name__ == "__main__":
     unittest.main()
