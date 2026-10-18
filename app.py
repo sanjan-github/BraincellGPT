@@ -147,7 +147,19 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     else:
         raise RuntimeError("Choose a supported provider.")
     if not api_key and provider not in ("ollama", "lmstudio"):
-        raise RuntimeError("API key is missing. Enter your key in provider settings.")
+        env_name = ""
+        if provider in OPENAI_COMPATIBLE_PROVIDERS:
+            env_name = OPENAI_COMPATIBLE_PROVIDERS[provider].get("env_key", "")
+        elif provider == "anthropic":
+            env_name = "ANTHROPIC_API_KEY"
+        elif provider == "custom":
+            env_name = "CUSTOM_API_KEY"
+        if env_name:
+            raise RuntimeError(
+                "No API key is configured for " + label + ". The key field is optional, but .env must contain "
+                + env_name + " for this provider. Keys are provider-specific: for example, GROQ_API_KEY cannot authenticate to NVIDIA NIM. Select the provider that matches the key already in .env, or add the matching variable."
+            )
+        raise RuntimeError("API key is missing for " + label + ". Add its provider-specific key to .env or enter a key in provider settings.")
     if len(api_key) > 500 or len(endpoint) > 2000 or len(model) > 300:
         raise RuntimeError("Provider settings are too long.")
     styles = {
