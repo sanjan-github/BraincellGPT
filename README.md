@@ -73,8 +73,9 @@ in the terminal. Stop the server with **Ctrl+C**.
 - Provider selection for Groq, OpenAI, Anthropic, OpenRouter, NVIDIA NIM, Ollama, and custom OpenAI-compatible APIs.
 - Five personalities: Normal, Sarcastic, Chaotic, Professional, and Brutally Honest.
 - Conversation context preserved within the current browser session.
-- Configure a provider, personal API key, custom endpoint, and model from the interface.
-- Personal API keys stay in the current browser tab's session storage; the server does not save them.
+- Configure a provider, optional personal API key, custom endpoint, and model from the interface.
+- A key entered in the browser overrides the selected provider's .env key; leave it blank to use the server-side environment key.
+- Browser-entered API keys stay in the current tab's session storage; the server does not save them.
 - Clear error messages for missing/rejected API keys, rate limits, and connection failures.
 - Health check at `GET /health`.
 - Mobile and desktop responsive layout.
@@ -83,12 +84,25 @@ in the terminal. Stop the server with **Ctrl+C**.
 
 ## Environment variables
 
-All variables are optional. You can provide a key in the app instead of configuring `GROQ_API_KEY` in the root `.env` file.
+All variables are optional. A browser-entered key overrides the matching .env key. If the browser key is blank, BrainCellGPT falls back to .env. For the custom provider, you can configure the endpoint and model entirely in .env too.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GROQ_API_KEY` | *(optional)* | Fallback Groq API key |
 | `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model name |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | provider default | Optional OpenAI credentials/model |
+| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | provider default | Optional OpenRouter credentials/model |
+| `NVIDIA_NIM_API_KEY`, `NVIDIA_NIM_MODEL` | provider default | Optional NVIDIA NIM credentials/model |
+| `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` | provider default | Optional DeepSeek credentials/model |
+| `MISTRAL_API_KEY`, `MISTRAL_MODEL` | provider default | Optional Mistral credentials/model |
+| `XAI_API_KEY`, `XAI_MODEL` | provider default | Optional xAI credentials/model |
+| `TOGETHER_API_KEY`, `TOGETHER_MODEL` | provider default | Optional Together AI credentials/model |
+| `FIREWORKS_API_KEY`, `FIREWORKS_MODEL` | provider default | Optional Fireworks credentials/model |
+| `CEREBRAS_API_KEY`, `CEREBRAS_MODEL` | provider default | Optional Cerebras credentials/model |
+| `ANTHROPIC_API_KEY` | — | Optional Anthropic credential |
+| `CUSTOM_API_BASE_URL` | — | Custom OpenAI-compatible API base URL (HTTPS) |
+| `CUSTOM_API_KEY` | — | Optional custom provider key |
+| `CUSTOM_MODEL` | — | Custom provider model ID |
 | `PORT` | `8000` | Port the server listens on |
 
 ---
