@@ -11,13 +11,23 @@ One Python file. One HTML file. One command to run it.
 
 **Requirements:** Python 3.10 or later and an internet connection.
 
-### 1 — Get a Groq API key
+### 1 — Choose a provider
 
-Sign up at [console.groq.com](https://console.groq.com) and create a Groq API key.
+Use the **Model Provider** selector in the app. Supported options:
+
+- **Groq** — your Groq API key, or `GROQ_API_KEY` from `.env`.
+- **OpenAI** — your OpenAI API key.
+- **Anthropic Claude** — your Anthropic API key; uses Anthropic's Messages API.
+- **OpenRouter** — your OpenRouter API key.
+- **NVIDIA NIM** — your NVIDIA API key.
+- **Ollama (local)** — run Ollama locally and enter a model installed on your machine; a key is normally not needed.
+- **Custom OpenAI-compatible API** — enter a compatible API base URL, key, and model ID.
+
+The default model IDs are starting examples, not guarantees that your account has access to them. Change the model ID in `.env` or provider settings when needed. For Ollama, install and run Ollama first, then pull a model such as `ollama pull llama3.2`.
 
 ### 2 — Choose how to provide your key
 
-**Option A — Enter it in the app:** Start the server, enter your key in **Your Groq API Key**, then click **Use key**. The key is kept in that browser tab's session storage and sent to the app server only with chat requests. Use **Clear** to remove it.
+**Option A — Enter it in the app:** Start the server, enter your key in the **API Key** field, then click **Use key**. The key is kept in that browser tab's session storage and sent to the app server only with chat requests. Use **Clear** to remove it.
 
 **Option B — Configure it locally:** Copy `.env.example` to `.env` in the repository root:
 
@@ -33,7 +43,7 @@ GROQ_MODEL=llama-3.3-70b-versatile
 PORT=8000
 ```
 
-A key entered in the app takes precedence for that request. If no key is entered, the server falls back to `GROQ_API_KEY` from `.env`.
+A key entered in the app is used for the selected provider. For Groq, if no personal key is entered, the server falls back to `GROQ_API_KEY` from `.env`.
 
 ### 3 — Start the server
 
@@ -60,10 +70,10 @@ in the terminal. Stop the server with **Ctrl+C**.
 
 - One-command startup: `python app.py`.
 - No npm, no Node.js, no virtual environment, no build step required.
-- Groq Chat Completions API integration (configurable model).
+- Provider selection for Groq, OpenAI, Anthropic, OpenRouter, NVIDIA NIM, Ollama, and custom OpenAI-compatible APIs.
 - Five personalities: Normal, Sarcastic, Chaotic, Professional, and Brutally Honest.
 - Conversation context preserved within the current browser session.
-- Enter a personal Groq API key in the interface, use it for chat requests, or clear it.
+- Configure a provider, personal API key, custom endpoint, and model from the interface.
 - Personal API keys stay in the current browser tab's session storage; the server does not save them.
 - Clear error messages for missing/rejected API keys, rate limits, and connection failures.
 - Health check at `GET /health`.
@@ -77,7 +87,7 @@ All variables are optional. You can provide a key in the app instead of configur
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GROQ_API_KEY` | *(required)* | Your Groq API key |
+| `GROQ_API_KEY` | *(optional)* | Fallback Groq API key |
 | `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model name |
 | `PORT` | `8000` | Port the server listens on |
 
@@ -147,13 +157,12 @@ State what was tested and what remains unverified.
 
 Conversation history is held in the current browser session and is not saved after a page refresh.
 Long-term memory, database storage, authentication, and tool execution are not implemented.
-A valid Groq API key and an internet connection are required for AI responses.
-The configured model must be available on your Groq account; change `GROQ_MODEL` in `.env` if needed.
+Cloud providers require valid provider credentials and network access. Ollama requires a running local service and an installed model. The selected model ID must be available to the chosen provider.
 This is a local development prototype, not a production-ready public service.
 
 ## Security
 
-You can enter a Groq API key in the interface; it is stored in the current tab's session storage and sent to the BrainCellGPT server with chat requests. The server does not persist the supplied key, and request logging does not include request bodies. Alternatively, keep the key in the root `.env` file. Never commit real keys.
+You can enter a provider API key in the interface; it is stored in the current tab's session storage and sent to the BrainCellGPT server with chat requests. The server does not persist the supplied key, and request logging does not include request bodies. Alternatively, keep the key in the root `.env` file. Never commit real keys.
 
 Only enter your key into an instance you trust. If you run someone else's hosted copy, that server receives the key and could modify its code to capture it. The server binds to `127.0.0.1` by default. Do not expose it publicly until authentication, rate limiting, input validation, and deployment security have been implemented and reviewed.
 
