@@ -22,6 +22,8 @@ jobs:
         run: python -m py_compile app.py
       - name: Verify web UI exists
         run: python -c "from pathlib import Path; assert Path('web/index.html').is_file(), 'web/index.html is missing'"
+      - name: Run provider and security unit tests
+        run: python -m unittest discover -s tests -v
       - name: Scan tracked files for common leaked secrets
         shell: bash
         run: |
