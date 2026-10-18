@@ -164,8 +164,15 @@ h1 {
   font-size:10px;
   letter-spacing:0;
   line-height:1.5;
-  max-width:330px
+  max-width:330px;
+  padding:7px 9px;
+  border:1px solid transparent;
+  border-radius:7px;
+  overflow-wrap:anywhere
 }
+.api-key-note[data-state="checking"] { color:#e8d38a; background:#e8d38a12; border-color:#e8d38a55 }
+.api-key-note[data-state="success"] { color:#c7fb69; background:#c7fb6912; border-color:#c7fb6955 }
+.api-key-note[data-state="error"] { color:#ff8d8d; background:#ff8d8d12; border-color:#ff8d8d88 }
 .personality {
   display:flex;
   flex-direction:column;
@@ -426,8 +433,8 @@ textarea:focus-visible {
     try { return JSON.parse(sessionStorage.getItem("braincellgpt_provider_keys") || "{}"); }
     catch { return {}; }
   })();
-  apiKeyInput.value = providerKeys[providerSelect.value] || "";
   providerSelect.value = sessionStorage.getItem("braincellgpt_provider") || "groq";
+  apiKeyInput.value = providerKeys[providerSelect.value] || "";
   if (baseUrlInput) baseUrlInput.value = sessionStorage.getItem("braincellgpt_base_url") || "";
   if (modelNameInput) modelNameInput.value = sessionStorage.getItem("braincellgpt_model") || "";
   function updateProviderFields() {
@@ -481,7 +488,7 @@ textarea:focus-visible {
       const response = await fetch("/api/chat", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({message:text,history:prior,personality:personality.value,provider:providerSelect.value,api_key:sessionStorage.getItem("braincellgpt_provider_api_key") || "",base_url:baseUrlInput ? baseUrlInput.value.trim() : "",model:modelNameInput ? modelNameInput.value.trim() : ""})
+        body:JSON.stringify({message:text,history:prior,personality:personality.value,provider:providerSelect.value,api_key:providerKeys[providerSelect.value] || apiKeyInput.value.trim(),base_url:baseUrlInput ? baseUrlInput.value.trim() : "",model:modelNameInput ? modelNameInput.value.trim() : ""})
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed. Try again.");
@@ -501,6 +508,8 @@ textarea:focus-visible {
     const button = document.querySelector("#testConnection");
     button.disabled = true;
     button.textContent = "Testing...";
+    apiKeyStatus.dataset.state = "checking";
+    apiKeyStatus.setAttribute("role", "status");
     apiKeyStatus.textContent = "Checking provider connection...";
     try {
       const response = await fetch("/api/test-connection", {
@@ -515,8 +524,12 @@ textarea:focus-visible {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Connection test failed.");
+      apiKeyStatus.dataset.state = "success";
+      apiKeyStatus.setAttribute("role", "status");
       apiKeyStatus.textContent = "Connection successful.";
     } catch (err) {
+      apiKeyStatus.dataset.state = "error";
+      apiKeyStatus.setAttribute("role", "alert");
       apiKeyStatus.textContent = err instanceof Error ? err.message : "Connection test failed.";
     } finally {
       button.disabled = false;
@@ -528,17 +541,22 @@ textarea:focus-visible {
     if (key) {
       providerKeys[providerSelect.value] = key;
       sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
-      apiKeyStatus.textContent = "Key saved in this tab and sent to your BrainCellGPT server only with chat requests.";
+      apiKeyStatus.dataset.state = "success";
+      apiKeyStatus.textContent = "Key saved in this tab. It is sent to your local server with chat requests.";
     } else {
       delete providerKeys[providerSelect.value];
       sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
+      apiKeyStatus.dataset.state = "";
       apiKeyStatus.textContent = "Personal key cleared. Groq can fall back to GROQ_API_KEY from .env.";
     }
   });
   document.querySelector("#clearApiKey").addEventListener("click", () => {
     sessionStorage.removeItem("braincellgpt_provider_api_key");
     sessionStorage.removeItem("braincellgpt_groq_api_key");
+    delete providerKeys[providerSelect.value];
+    sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
     apiKeyInput.value = "";
+    apiKeyStatus.dataset.state = "";
     apiKeyStatus.textContent = "Personal key cleared from this tab.";
   });
   [baseUrlInput, modelNameInput].forEach(field => {
