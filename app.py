@@ -194,6 +194,11 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         detail = str(detail).replace(api_key, "[redacted]") if api_key else str(detail)
         detail = " ".join(detail.split())[:300]
         suffix = " Provider detail: " + detail if detail else ""
+        if provider == "nvidia_nim" and exc.code == 403:
+            raise RuntimeError(
+                "NVIDIA NIM returned HTTP 403: Authorization failed. The API endpoint and model ID can be correct while your NVIDIA account still lacks hosted inference access. Confirm the key was generated in NVIDIA Build and try the model in its Playground. If Playground works but this API call fails, ask NVIDIA support to check Public API Endpoints / hosted NIM inference access for your account."
+                + suffix
+            ) from exc
         if exc.code in (400, 401, 403):
             raise RuntimeError(label + " returned HTTP " + str(exc.code) + ". Check the API key, account permissions, and model ID." + suffix) from exc
         if exc.code == 404:
