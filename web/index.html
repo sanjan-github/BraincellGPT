@@ -422,8 +422,11 @@ textarea:focus-visible {
   const providerSelect = document.querySelector("#providerSelect");
   const baseUrlInput = document.querySelector("#baseUrl");
   const modelNameInput = document.querySelector("#modelName");
-  const savedKey = sessionStorage.getItem("braincellgpt_provider_api_key") || "";
-  apiKeyInput.value = savedKey;
+  const providerKeys = (() => {
+    try { return JSON.parse(sessionStorage.getItem("braincellgpt_provider_keys") || "{}"); }
+    catch { return {}; }
+  })();
+  apiKeyInput.value = providerKeys[providerSelect.value] || "";
   providerSelect.value = sessionStorage.getItem("braincellgpt_provider") || "groq";
   if (baseUrlInput) baseUrlInput.value = sessionStorage.getItem("braincellgpt_base_url") || "";
   if (modelNameInput) modelNameInput.value = sessionStorage.getItem("braincellgpt_model") || "";
@@ -523,10 +526,12 @@ textarea:focus-visible {
   document.querySelector("#saveApiKey").addEventListener("click", () => {
     const key = apiKeyInput.value.trim();
     if (key) {
-      sessionStorage.setItem("braincellgpt_provider_api_key", key);
+      providerKeys[providerSelect.value] = key;
+      sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
       apiKeyStatus.textContent = "Key saved in this tab and sent to your BrainCellGPT server only with chat requests.";
     } else {
-      sessionStorage.removeItem("braincellgpt_provider_api_key");
+      delete providerKeys[providerSelect.value];
+      sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
       apiKeyStatus.textContent = "Personal key cleared. Groq can fall back to GROQ_API_KEY from .env.";
     }
   });
