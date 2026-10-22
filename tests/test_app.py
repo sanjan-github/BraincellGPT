@@ -1,3 +1,4 @@
+import email.message
 import io
 import json
 import os
@@ -97,7 +98,7 @@ class ApiReliabilityTests(unittest.TestCase):
             "https://api.groq.com/openai/v1/chat/completions",
             403,
             "Forbidden",
-            {},
+            email.message.Message(),
             io.BytesIO(b'{"error":{"message":"bad secret-key"}}'),
         )
 
