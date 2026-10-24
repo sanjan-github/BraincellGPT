@@ -10,6 +10,7 @@ import os
 import urllib.error
 import urllib.request
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -81,6 +82,42 @@ def _safe_path(root: Path, relative: str) -> Path:
     return candidate
 
 
+def _write_text_atomically(path: Path, content: str) -> None:
+    """Replace a workspace text file atomically so failed writes cannot truncate it."""
+    temporary_path = None
+    existing_mode = None
+    try:
+        if path.exists():
+            existing_mode = path.stat().st_mode & 0o777
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=path.parent,
+            prefix=".braincell-write-",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        if existing_mode is not None:
+            temporary_path.chmod(existing_mode)
+        # Recheck immediately before replacement. os.replace replaces a symlink
+        # itself rather than following it, but rejecting it keeps policy explicit.
+        if path.is_symlink():
+            raise ValueError("Access through symbolic links is disabled.")
+        os.replace(temporary_path, path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def _visible_files(root: Path, directory: str = ""):
     base = _safe_path(root, directory) if directory else root.resolve()
     if not base.is_dir():
@@ -141,7 +178,7 @@ def run_tool(name: str, args: dict[str, Any], root: Path, allow_edits: bool) -> 
             if path.exists() and path.is_dir():
                 raise ValueError("Path points to a directory.")
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8", newline="\n")
+            _write_text_atomically(path, content)
             return json.dumps({"written": path.relative_to(root).as_posix(), "bytes": len(content.encode("utf-8"))})
         return json.dumps({"error": "Unknown tool."})
     except (OSError, ValueError) as exc:
