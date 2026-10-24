@@ -36,13 +36,15 @@ and extension-host APIs are outside this backend port.
   deltas, tool progress, and a local-only streaming agent endpoint.
 - Provider transport limits, shared concurrency control, no redirects, and
   pinned public-IP connections for custom provider URLs.
+- Bounded inline image input for chat and agent APIs, converted to native
+  OpenAI-compatible or Anthropic image blocks; session history stores text only.
 
 ## Remaining backend work
 
 1. Add OAuth 2.1 authorization discovery, token lifecycle, and reauthorization
    for remote MCP servers; configured bearer/API-key headers are supported now.
 2. Expand provider adapters and model capability metadata, then add semantic
-  conversation compaction and image inputs.
+   conversation compaction.
 3. Add end-to-end acceptance coverage for task persistence, approval, streaming,
    and rollback.
 
@@ -67,6 +69,12 @@ the stream. Resolve that specific action with `POST /api/agent/approvals` using
 `{ "approval_id", "session_id", "decision": "approve" | "reject" }`. The queue
 is in memory, bounded to 32 pending actions, and expires decisions after three
 minutes.
+
+Both `POST /api/chat` and agent endpoints optionally accept `images`, an array
+of up to four PNG, JPEG, GIF, or WebP base64 data URLs. Each decoded image is
+limited to 3 MB and the combined decoded image data to 8 MB. Provider/model
+image support depends on the selected endpoint; text-only requests keep the
+existing payload format.
 
 Configure up to eight local or remote MCP servers in the
 `BRAINCELLGPT_MCP_SERVERS` environment variable as a JSON list. A local entry

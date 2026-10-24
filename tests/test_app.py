@@ -116,6 +116,18 @@ class PersonalityPromptTests(unittest.TestCase):
 
 
 class ApiReliabilityTests(unittest.TestCase):
+    def test_chat_sends_bounded_image_as_openai_compatible_content(self):
+        import base64
+        response = MagicMock()
+        response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
+        response.__enter__.return_value = response
+        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode()
+        with patch("app.open_provider_request", return_value=response) as opener:
+            app.generate_reply("describe", [], "normal", provider="groq", user_api_key="secret-key", images=[image])
+        payload = json.loads(opener.call_args.args[0].data.decode("utf-8"))
+        self.assertEqual(payload["messages"][-1]["content"][0], {"type": "text", "text": "describe"})
+        self.assertEqual(payload["messages"][-1]["content"][1]["type"], "image_url")
+
     def test_openai_compatible_request_uses_provider_defaults_and_auth_header(self):
         response = MagicMock()
         response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
@@ -216,6 +228,19 @@ class ProviderResponseTests(unittest.TestCase):
 
 
 class ModelCompatibilityTests(unittest.TestCase):
+    def test_anthropic_chat_sends_native_image_blocks(self):
+        import base64
+        response = MagicMock()
+        response.read.return_value = b'{"content":[{"type":"text","text":"reply"}]}'
+        response.__enter__.return_value = response
+        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode()
+        with patch("app.open_provider_request", return_value=response) as opener:
+            app.generate_reply("describe", [], "normal", provider="anthropic", user_api_key="secret-key", images=[image])
+        payload = json.loads(opener.call_args.args[0].data.decode("utf-8"))
+        content = payload["messages"][-1]["content"]
+        self.assertEqual(content[0], {"type": "text", "text": "describe"})
+        self.assertEqual(content[1]["source"]["media_type"], "image/png")
+
     def test_anthropic_uses_native_headers_and_separate_system_prompt(self):
         response = MagicMock()
         response.read.return_value = b'{"content":[{"type":"text","text":"reply"}]}'

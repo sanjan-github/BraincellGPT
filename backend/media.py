@@ -1,0 +1,79 @@
+"""Validation and provider-format conversion for bounded inline images."""
+from __future__ import annotations
+
+import base64
+import binascii
+import re
+from typing import Any
+
+
+MAX_IMAGES = 4
+MAX_IMAGE_BYTES = 3_000_000
+MAX_TOTAL_IMAGE_BYTES = 8_000_000
+_IMAGE_DATA_URI_RE = re.compile(r"^data:(image/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/]*={0,2})$")
+
+
+def normalize_images(images: Any) -> list[dict[str, str]]:
+    """Validate image data URIs and return provider-neutral MIME/base64 parts."""
+    if images is None:
+        return []
+    if not isinstance(images, list) or len(images) > MAX_IMAGES:
+        raise ValueError(f"Images must be a list of at most {MAX_IMAGES} data URLs.")
+    normalized = []
+    total_bytes = 0
+    for value in images:
+        if not isinstance(value, str) or len(value) > MAX_IMAGE_BYTES * 4 // 3 + 256:
+            raise ValueError("Each image must be a bounded base64 data URL.")
+        match = _IMAGE_DATA_URI_RE.fullmatch(value)
+        if not match:
+            raise ValueError("Images must use PNG, JPEG, GIF, or WebP base64 data URLs.")
+        mime_type, encoded = match.groups()
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("Image data is not valid base64.") from exc
+        if not data or len(data) > MAX_IMAGE_BYTES:
+            raise ValueError("Each decoded image must be between 1 byte and 3 MB.")
+        if not _matches_image_signature(mime_type, data):
+            raise ValueError("Image MIME type does not match its file contents.")
+        total_bytes += len(data)
+        if total_bytes > MAX_TOTAL_IMAGE_BYTES:
+            raise ValueError("Combined image data must not exceed 8 MB.")
+        normalized.append({"mime_type": mime_type, "data": encoded})
+    return normalized
+
+
+def _matches_image_signature(mime_type: str, data: bytes) -> bool:
+    if mime_type == "image/png":
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if mime_type == "image/jpeg":
+        return data.startswith(b"\xff\xd8\xff")
+    if mime_type == "image/gif":
+        return data.startswith((b"GIF87a", b"GIF89a"))
+    if mime_type == "image/webp":
+        return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    return False
+
+
+def openai_content(text: str, images: list[dict[str, str]]) -> str | list[dict]:
+    if not images:
+        return text
+    return [
+        {"type": "text", "text": text},
+        *[
+            {"type": "image_url", "image_url": {"url": f"data:{image['mime_type']};base64,{image['data']}"}}
+            for image in images
+        ],
+    ]
+
+
+def anthropic_content(text: str, images: list[dict[str, str]]) -> str | list[dict]:
+    if not images:
+        return text
+    return [
+        {"type": "text", "text": text},
+        *[
+            {"type": "image", "source": {"type": "base64", "media_type": image["mime_type"], "data": image["data"]}}
+            for image in images
+        ],
+    ]

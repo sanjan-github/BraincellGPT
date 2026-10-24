@@ -23,6 +23,7 @@ from backend.agent_state import SESSION_ID_RE, get_agent_store
 from backend.agent_modes import MODES, normalize_mode
 from backend import mcp_stdio
 from backend.provider_http import MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
+from backend.media import anthropic_content, normalize_images, openai_content
 
 
 MAX_FILE_BYTES = 200_000
@@ -718,7 +719,16 @@ def _agent_system(mode: str, allow_edits: bool, allow_commands: bool, approval_r
 def _bound_agent_messages(messages: list[dict]) -> list[dict]:
     """Keep a bounded prompt while removing complete oldest tool exchanges."""
     def size() -> int:
-        return sum(len(json.dumps(message, ensure_ascii=False)) for message in messages)
+        total = 0
+        for message in messages:
+            content = message.get("content") if isinstance(message, dict) else None
+            if isinstance(content, list):
+                # Base64 image bytes are bounded separately at ingress and should
+                # not evict the text instructions or current user turn.
+                text_only = [part for part in content if not isinstance(part, dict) or part.get("type") == "text"]
+                message = {**message, "content": text_only}
+            total += len(json.dumps(message, ensure_ascii=False))
+        return total
 
     while len(messages) > 2 and size() > MAX_AGENT_CONTEXT_CHARS:
         first = messages[1]
@@ -838,6 +848,7 @@ def run_agent(
     approval_callback=None,
     mcp_router: mcp_stdio.MCPToolRouter | None = None,
     checkpoint_group_id: str | None = None,
+    images: list[str] | None = None,
 ) -> dict:
     provider = provider.strip().lower()
     mode = normalize_mode(mode)
@@ -880,7 +891,9 @@ def run_agent(
             continue
         messages.insert(1, {"role": item["role"], "content": content})
         history_chars += len(content)
-    messages.append({"role": "user", "content": task[:12000]})
+    image_parts = normalize_images(images)
+    user_content = anthropic_content(task[:12000], image_parts) if provider == "anthropic" else openai_content(task[:12000], image_parts)
+    messages.append({"role": "user", "content": user_content})
     tool_calls_made = 0
     executed_mutations: set[str] = set()
     todos: list[str] = []
@@ -1014,6 +1027,7 @@ def run_agent(
                             approval_callback=approval_callback,
                             mcp_router=mcp_router,
                             checkpoint_group_id=checkpoint_group_id,
+                            images=images,
                         )
                         result = json.dumps({"subtask_result": child})
                     except (RuntimeError, ValueError) as exc:

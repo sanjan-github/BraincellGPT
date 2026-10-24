@@ -16,6 +16,22 @@ from backend.agent import (
 
 
 class AgentModeTests(unittest.TestCase):
+    def test_openai_agent_forwards_images_and_retains_them_in_context_bounding(self):
+        import base64
+        response = MagicMock()
+        response.read.return_value = b'{"choices":[{"message":{"content":"Answer"}}]}'
+        response.__enter__.return_value = response
+        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode()
+        with patch("backend.agent.open_provider_request", return_value=response) as opener:
+            run_agent("describe", [], Path.cwd(), "groq", "api-key", "", "", {}, mode="ask", images=[image])
+        payload = json.loads(opener.call_args.args[0].data.decode())
+        content = payload["messages"][-1]["content"]
+        self.assertEqual(content[0]["text"], "describe")
+        self.assertEqual(content[1]["type"], "image_url")
+        with patch("backend.agent.MAX_AGENT_CONTEXT_CHARS", 120):
+            bounded = _bound_agent_messages(payload["messages"])
+        self.assertEqual(bounded[-1]["content"][1]["type"], "image_url")
+
     def test_modes_filter_capabilities_server_side(self):
         ask_tools = {tool["function"]["name"] for tool in tools_for_mode("ask", True, True)}
         self.assertIn("read_file", ask_tools)
@@ -192,6 +208,23 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertIn("system", payload)
         self.assertIn("tools", payload)
         self.assertNotIn("write_file", {tool["name"] for tool in payload["tools"]})
+
+    def test_anthropic_agent_forwards_native_image_blocks(self):
+        import base64
+        response = MagicMock()
+        response.read.return_value = b'{"content":[{"type":"text","text":"Answer"}]}'
+        response.__enter__.return_value = response
+        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode()
+        with patch("backend.agent.open_provider_request", return_value=response) as opener:
+            run_agent(
+                "describe", [], Path.cwd(), "anthropic", "api-key", "", "claude-test", {},
+                mode="ask", images=[image],
+            )
+        payload = json.loads(opener.call_args.args[0].data.decode())
+        content = payload["messages"][-1]["content"]
+        self.assertEqual(content[0], {"type": "text", "text": "describe"})
+        self.assertEqual(content[1]["type"], "image")
+        self.assertEqual(content[1]["source"]["media_type"], "image/png")
 
     def test_attempt_completion_ends_agent_loop(self):
         response = MagicMock()

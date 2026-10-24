@@ -21,6 +21,7 @@ from backend.agent_approvals import get_approval_registry
 from backend.mcp_stdio import MCPToolRouter
 from backend.agent_state import get_agent_store
 from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
+from backend.media import anthropic_content, normalize_images, openai_content
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
@@ -222,7 +223,7 @@ def _read_provider_json(response, label: str) -> object:
         raise RuntimeError(label + " returned an invalid JSON response.") from exc
 
 
-def generate_reply(message: str, history: list[dict], personality: str, provider: str = "groq", user_api_key: str = "", base_url: str = "", model_override: str = "") -> str:
+def generate_reply(message: str, history: list[dict], personality: str, provider: str = "groq", user_api_key: str = "", base_url: str = "", model_override: str = "", images: list[str] | None = None) -> str:
     """Call Groq, Anthropic, Ollama, or an OpenAI-compatible endpoint."""
     provider = provider.strip().lower()
     api_key = user_api_key.strip()
@@ -289,10 +290,12 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     if len(api_key) > 500 or len(endpoint) > 2000 or len(model) > 300:
         raise RuntimeError("Provider settings are too long.")
     system_text = build_system_prompt(personality)
+    image_parts = normalize_images(images)
     messages = [{"role": "system", "content": system_text}]
     for item in trim_history(history):
         messages.append(item)
-    messages.append({"role": "user", "content": message})
+    user_content = anthropic_content(message, image_parts) if protocol == "anthropic" else openai_content(message, image_parts)
+    messages.append({"role": "user", "content": user_content})
     headers = {"Content-Type": "application/json"}
     if protocol == "anthropic":
         headers.update({"x-api-key": api_key, "anthropic-version": "2023-06-01"})
@@ -497,7 +500,8 @@ class Handler(BaseHTTPRequestHandler):
         stream_started = False
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length <= 0 or length > 200_000:
+            max_body_bytes = 12_000_000 if route in ("/api/chat", "/api/agent", "/api/agent/stream") else 200_000
+            if length <= 0 or length > max_body_bytes:
                 self.send_json(413, {"error": "Request body is empty or too large."})
                 return
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
@@ -543,6 +547,11 @@ class Handler(BaseHTTPRequestHandler):
                 task = payload.get("task", "")
                 if not isinstance(task, str) or not task.strip() or len(task) > 12000:
                     self.send_json(400, {"error": "Provide a task up to 12,000 characters."})
+                    return
+                try:
+                    images = normalize_images(payload.get("images"))
+                except ValueError as exc:
+                    self.send_json(400, {"error": str(exc)})
                     return
                 provider = payload.get("provider", "") if isinstance(payload.get("provider", ""), str) else ""
                 base_url = payload.get("base_url", "") if isinstance(payload.get("base_url", ""), str) else ""
@@ -599,6 +608,7 @@ class Handler(BaseHTTPRequestHandler):
                         event_callback=callback,
                         approval_callback=approval_callback,
                         mcp_router=mcp_router,
+                        images=payload.get("images"),
                     )
                 except (RuntimeError, ValueError) as exc:
                     store.add_turn(session_id, "assistant", str(exc), {"error": True})
@@ -641,6 +651,11 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(history, list):
                 history = []
             history = trim_history(history)
+            try:
+                images = normalize_images(payload.get("images")) if route == "/api/chat" else []
+            except ValueError as exc:
+                self.send_json(400, {"error": str(exc)})
+                return
             def text_field(name: str, default: str = "") -> str:
                 value = payload.get(name, default)
                 return value if isinstance(value, str) else default
@@ -653,7 +668,7 @@ class Handler(BaseHTTPRequestHandler):
             reply = generate_reply(
                 message, history, text_field("personality", "normal"),
                 text_field("provider", "groq"), supplied_key or saved_key,
-                text_field("base_url"), text_field("model")
+                text_field("base_url"), text_field("model"), images=images,
             )
             if route == "/api/test-connection":
                 self.send_json(200, {"ok": True, "message": "Connection successful.", "provider": text_field("provider", "groq")})
