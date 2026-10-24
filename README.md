@@ -59,7 +59,7 @@ GROQ_MODEL=llama-3.3-70b-versatile
 PORT=8000
 ```
 
-Keep the key field in the interface empty to use the matching value from `.env`. A key entered in the interface overrides the environment key for that provider.
+You can also enter a key in a provider profile in the interface. Saved profile keys are kept in the local Python process memory and override that provider's `.env` value. They are cleared when the app stops.
 
 ### 3. Start BrainCellGPT
 
@@ -163,7 +163,8 @@ The health endpoint is available at `http://localhost:8000/health`.
 ## Security and privacy
 
 - The server binds to `127.0.0.1` by default and is intended for local use.
-- API keys entered in the interface are held in that browser tab's session storage and sent to the local server with requests. The server does not persist them.
+- API keys saved in a provider profile are held only in the local Python process memory. Chat requests send a profile ID, not the key; credentials are cleared when the app stops.
+- Provider profile names and nonsecret settings are held in the browser tab's session storage. The UI never reads a saved key back from the server.
 - Keys in `.env` remain on your machine. Never commit or share that file.
 - Provider requests are sent to the provider you select; review that provider's terms and privacy practices.
 - Local Ollama and LM Studio endpoints are restricted to localhost. Custom remote endpoints must use HTTPS and pass URL validation.

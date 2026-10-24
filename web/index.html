@@ -654,6 +654,9 @@ button:active {
   margin-top: 4px;
 }
 
+.profile-actions { grid-template-columns: 1fr auto auto; }
+.profile-actions .form-field { min-width: 0; }
+
 .btn-secondary {
   padding: 7px 10px;
   background: var(--bg-subtle);
@@ -829,6 +832,18 @@ button:active {
   </div>
   <div class="drawer-body">
     <div class="form-group">
+      <label class="form-label" for="profileSelect">Provider profile</label>
+      <div class="form-actions profile-actions">
+        <select class="form-field" id="profileSelect" aria-label="Provider profile"></select>
+        <button class="btn-secondary" id="addProfile" type="button">＋</button>
+        <button class="btn-secondary" id="deleteProfile" type="button">Delete</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="profileName">Profile name</label>
+      <input class="form-field" id="profileName" type="text" maxlength="64" autocomplete="off" placeholder="My provider profile">
+    </div>
+    <div class="form-group">
       <label class="form-label" for="providerSelect">Provider</label>
       <select class="form-field" id="providerSelect">
         <option value="groq">Groq (Ultra-fast Llama 3.3)</option>
@@ -850,13 +865,13 @@ button:active {
 
     <div class="form-group">
       <label class="form-label" for="apiKey">API Key</label>
-      <input class="form-field" id="apiKey" type="password" autocomplete="off" placeholder="Leave blank to use server .env" aria-label="Provider API key">
+      <input class="form-field" id="apiKey" type="password" autocomplete="new-password" placeholder="Enter an API key" aria-label="Provider API key">
       <div class="form-actions">
         <button class="btn-secondary" id="saveApiKey" type="button">Save</button>
         <button class="btn-secondary" id="clearApiKey" type="button">Clear</button>
         <button class="btn-secondary" id="testConnection" type="button">Verify</button>
       </div>
-      <div class="form-status" id="apiKeyStatus" role="status">Keys remain in this browser tab only.</div>
+      <div class="form-status" id="apiKeyStatus" role="status">Keys are kept in server memory and cleared when the app stops.</div>
     </div>
 
     <div class="form-group" id="customFields" hidden>
@@ -883,6 +898,8 @@ button:active {
   const apiKeyInput = document.querySelector("#apiKey");
   const apiKeyStatus = document.querySelector("#apiKeyStatus");
   const providerSelect = document.querySelector("#providerSelect");
+  const profileSelect = document.querySelector("#profileSelect");
+  const profileNameInput = document.querySelector("#profileName");
   const baseUrlInput = document.querySelector("#baseUrl");
   const modelNameInput = document.querySelector("#modelName");
   const openSettingsTop = document.querySelector("#openSettingsTop");
@@ -920,17 +937,95 @@ button:active {
     }
   });
 
-  // Saved credentials and settings
-  const providerKeys = (() => {
-    try { return JSON.parse(sessionStorage.getItem("braincellgpt_provider_keys") || "{}"); }
-    catch { return {}; }
-  })();
-
-  const currentProvider = sessionStorage.getItem("braincellgpt_provider") || "groq";
-  providerSelect.value = currentProvider;
-  apiKeyInput.value = providerKeys[currentProvider] || "";
-  if (baseUrlInput) baseUrlInput.value = sessionStorage.getItem("braincellgpt_base_url") || "";
-  if (modelNameInput) modelNameInput.value = sessionStorage.getItem("braincellgpt_model") || "";
+  // Profiles contain settings only. Credentials are kept by the local Python process.
+  const profileStoreKey = "braincellgpt_profiles_v1";
+  const supportedProviders = new Set([...providerSelect.options].map(option => option.value));
+  const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/-/g, "");
+  let legacyKeys = {};
+  try { legacyKeys = JSON.parse(sessionStorage.getItem("braincellgpt_provider_keys") || "{}"); } catch { legacyKeys = {}; }
+  let profiles;
+  try { profiles = JSON.parse(sessionStorage.getItem(profileStoreKey) || "[]"); } catch { profiles = []; }
+  if (!Array.isArray(profiles)) profiles = [];
+  profiles = profiles.filter(p => p && typeof p.id === "string" && typeof p.provider === "string" && supportedProviders.has(p.provider));
+  if (!profiles.length) {
+    const legacyProvider = sessionStorage.getItem("braincellgpt_provider") || "groq";
+    profiles = [{ id: newId(), name: legacyProvider, provider: legacyProvider, model: sessionStorage.getItem("braincellgpt_model") || "", baseUrl: sessionStorage.getItem("braincellgpt_base_url") || "" }];
+  }
+  const legacyMigrations = [];
+  Object.entries(legacyKeys).forEach(([provider, key]) => {
+    if (typeof key !== "string" || !key.trim()) return;
+    let profile = profiles.find(item => item.provider === provider && !legacyMigrations.some(entry => entry.profileId === item.id));
+    if (!profile) {
+      profile = { id: newId(), name: provider, provider, model: "", baseUrl: "" };
+      profiles.push(profile);
+    }
+    legacyMigrations.push({ profileId: profile.id, key: key.trim() });
+  });
+  let activeProfileId = sessionStorage.getItem("braincellgpt_active_profile") || profiles[0].id;
+  if (!profiles.some(p => p.id === activeProfileId)) activeProfileId = profiles[0].id;
+  const activeProfile = () => profiles.find(p => p.id === activeProfileId);
+  function persistProfiles() {
+    sessionStorage.setItem(profileStoreKey, JSON.stringify(profiles));
+    sessionStorage.setItem("braincellgpt_active_profile", activeProfileId);
+  }
+  async function migrateLegacyKeys() {
+    try {
+      for (const entry of legacyMigrations) {
+        const response = await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: entry.profileId, api_key: entry.key }) });
+        if (!response.ok) throw new Error("Legacy key migration failed.");
+      }
+      sessionStorage.removeItem("braincellgpt_provider_keys");
+      sessionStorage.removeItem("braincellgpt_provider");
+      sessionStorage.removeItem("braincellgpt_model");
+      sessionStorage.removeItem("braincellgpt_base_url");
+      persistProfiles();
+      await refreshKeyStatus();
+    } catch {
+      apiKeyStatus.dataset.state = "error";
+      apiKeyStatus.textContent = "An older tab key could not be moved to app memory. Keep this tab open and retry.";
+    }
+  }
+  function renderProfileOptions() {
+    profileSelect.replaceChildren(...profiles.map(profile => {
+      const option = document.createElement("option");
+      option.value = profile.id;
+      option.textContent = profile.name || profile.provider;
+      return option;
+    }));
+    profileSelect.value = activeProfileId;
+    document.querySelector("#deleteProfile").disabled = profiles.length <= 1;
+  }
+  async function refreshKeyStatus() {
+    apiKeyInput.value = "";
+    apiKeyStatus.dataset.state = "";
+    if (["ollama", "lmstudio"].includes(activeProfile().provider)) {
+      apiKeyStatus.textContent = activeProfile().provider === "ollama" ? "Ollama local server. Default: http://localhost:11434/v1" : "LM Studio local server. Default: http://localhost:1234/v1";
+      return;
+    }
+    try {
+      const response = await fetch(`/api/profile-secret-status?id=${encodeURIComponent(activeProfileId)}`);
+      const data = await response.json();
+      apiKeyStatus.textContent = data.configured
+        ? "A key is saved in this app's memory. It is cleared when the server stops."
+        : "No profile key saved. The matching server .env key can be used if configured.";
+    } catch {
+      apiKeyStatus.textContent = "Key status unavailable. The matching server .env key can still be used.";
+    }
+  }
+  function loadActiveProfile() {
+    const profile = activeProfile();
+    profileNameInput.value = profile.name || "";
+    providerSelect.value = profile.provider;
+    modelNameInput.value = profile.model || "";
+    baseUrlInput.value = profile.baseUrl || "";
+    renderProfileOptions();
+    updateProviderFields();
+    refreshKeyStatus();
+  }
+  persistProfiles();
+  loadActiveProfile();
+  let keyMigration = Promise.resolve();
+  if (legacyMigrations.length) keyMigration = migrateLegacyKeys();
 
   function updateModelBadge() {
     const providerLabel = providerSelect.options[providerSelect.selectedIndex]?.text.split(" ")[0] || "Groq";
@@ -948,17 +1043,47 @@ button:active {
     document.querySelector("#baseUrlLabel").textContent = provider === "ollama" ? "Ollama Endpoint URL" : "Custom Base URL";
     baseUrlInput.placeholder = provider === "ollama" ? "http://localhost:11434/v1" : provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.example.com/v1";
     modelNameInput.placeholder = provider === "ollama" ? "e.g. llama3.2" : provider === "lmstudio" ? "Model ID in LM Studio" : "Default model or enter model ID";
-    apiKeyInput.placeholder = ["ollama", "lmstudio"].includes(provider) ? "Not needed for local models" : "Leave blank to use server .env";
-    apiKeyStatus.textContent = provider === "ollama" ? "Ollama local server. Default: http://localhost:11434/v1" : provider === "lmstudio" ? "LM Studio local server. Default: http://localhost:1234/v1" : provider === "custom" ? "Custom endpoint: provide base URL and key." : "Optional if configured in your server .env file.";
+    apiKeyInput.placeholder = ["ollama", "lmstudio"].includes(provider) ? "Not needed for local models" : "Enter a new API key to save or verify";
+    if (["ollama", "lmstudio"].includes(provider)) apiKeyStatus.textContent = provider === "ollama" ? "Ollama local server. Default: http://localhost:11434/v1" : "LM Studio local server. Default: http://localhost:1234/v1";
     updateModelBadge();
   }
 
   providerSelect.addEventListener("change", () => {
-    sessionStorage.setItem("braincellgpt_provider", providerSelect.value);
-    apiKeyInput.value = providerKeys[providerSelect.value] || "";
+    activeProfile().provider = providerSelect.value;
+    activeProfile().name = providerSelect.options[providerSelect.selectedIndex].text.split(" (")[0];
+    persistProfiles();
+    renderProfileOptions();
     updateProviderFields();
+    refreshKeyStatus();
   });
-  updateProviderFields();
+  profileSelect.addEventListener("change", () => {
+    activeProfileId = profileSelect.value;
+    persistProfiles();
+    loadActiveProfile();
+  });
+  document.querySelector("#addProfile").addEventListener("click", () => {
+    const profile = { id: newId(), name: "New profile", provider: providerSelect.value, model: "", baseUrl: "" };
+    profiles.push(profile);
+    activeProfileId = profile.id;
+    persistProfiles();
+    loadActiveProfile();
+    apiKeyStatus.textContent = "Choose a provider and add a key for this profile.";
+  });
+  profileNameInput.addEventListener("input", () => {
+    const name = profileNameInput.value.trim().slice(0, 64);
+    activeProfile().name = name || "Untitled profile";
+    persistProfiles();
+    renderProfileOptions();
+  });
+  document.querySelector("#deleteProfile").addEventListener("click", async () => {
+    if (profiles.length <= 1) return;
+    const response = await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: "" }) });
+    if (!response.ok) { apiKeyStatus.dataset.state = "error"; apiKeyStatus.textContent = "Could not delete this profile's saved key."; return; }
+    profiles = profiles.filter(profile => profile.id !== activeProfileId);
+    activeProfileId = profiles[0].id;
+    persistProfiles();
+    loadActiveProfile();
+  });
 
   let history = [];
   let busy = false;
@@ -1034,6 +1159,7 @@ button:active {
     thinkingRow.scrollIntoView({ behavior: "smooth", block: "end" });
 
     try {
+      await keyMigration;
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1041,7 +1167,7 @@ button:active {
           message: text,
           history: prior,
           provider: providerSelect.value,
-          api_key: providerKeys[providerSelect.value] || apiKeyInput.value.trim(),
+          profile_id: activeProfileId,
           base_url: baseUrlInput ? baseUrlInput.value.trim() : "",
           model: modelNameInput ? modelNameInput.value.trim() : ""
         })
@@ -1071,11 +1197,13 @@ button:active {
     apiKeyStatus.dataset.state = "checking";
     apiKeyStatus.textContent = "Contacting provider...";
     try {
+      await keyMigration;
       const response = await fetch("/api/test-connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: providerSelect.value,
+          profile_id: activeProfileId,
           api_key: apiKeyInput.value.trim(),
           base_url: baseUrlInput ? baseUrlInput.value.trim() : "",
           model: modelNameInput ? modelNameInput.value.trim() : ""
@@ -1089,6 +1217,7 @@ button:active {
       apiKeyStatus.dataset.state = "error";
       apiKeyStatus.textContent = err instanceof Error ? err.message : "Connection failed.";
     } finally {
+      apiKeyInput.value = "";
       btn.disabled = false;
       btn.textContent = "Verify";
     }
@@ -1097,31 +1226,27 @@ button:active {
   // Save / Clear keys
   document.querySelector("#saveApiKey").addEventListener("click", () => {
     const key = apiKeyInput.value.trim();
-    if (key) {
-      providerKeys[providerSelect.value] = key;
-      sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
-      apiKeyStatus.dataset.state = "success";
-      apiKeyStatus.textContent = "Key saved for this tab.";
-    } else {
-      delete providerKeys[providerSelect.value];
-      sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
-      apiKeyStatus.dataset.state = "";
-      apiKeyStatus.textContent = "Key cleared. Using server .env configuration.";
-    }
+    if (!key) { apiKeyStatus.textContent = "Enter a key first. Use Clear to remove the saved key."; return; }
+    fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: key }) })
+      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Could not save key."); apiKeyInput.value = ""; apiKeyStatus.dataset.state = "success"; apiKeyStatus.textContent = "Key saved in app memory. It is cleared when the server stops."; })
+      .catch(error => { apiKeyStatus.dataset.state = "error"; apiKeyStatus.textContent = error.message; });
   });
 
-  document.querySelector("#clearApiKey").addEventListener("click", () => {
-    delete providerKeys[providerSelect.value];
-    sessionStorage.setItem("braincellgpt_provider_keys", JSON.stringify(providerKeys));
+  document.querySelector("#clearApiKey").addEventListener("click", async () => {
     apiKeyInput.value = "";
-    apiKeyStatus.dataset.state = "";
-    apiKeyStatus.textContent = "Key removed. Using server .env configuration.";
+    try {
+      const response = await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: "" }) });
+      if (!response.ok) throw new Error("Could not clear key.");
+      apiKeyStatus.dataset.state = "";
+      apiKeyStatus.textContent = "Profile key cleared. The matching server .env key can still be used.";
+    } catch (error) { apiKeyStatus.dataset.state = "error"; apiKeyStatus.textContent = error.message; }
   });
 
   [baseUrlInput, modelNameInput].forEach(field => {
-    if (field) field.addEventListener("change", () => {
-      if (baseUrlInput) sessionStorage.setItem("braincellgpt_base_url", baseUrlInput.value.trim());
-      if (modelNameInput) sessionStorage.setItem("braincellgpt_model", modelNameInput.value.trim());
+    if (field) field.addEventListener("input", () => {
+      activeProfile().baseUrl = baseUrlInput.value.trim();
+      activeProfile().model = modelNameInput.value.trim();
+      persistProfiles();
       updateModelBadge();
     });
   });

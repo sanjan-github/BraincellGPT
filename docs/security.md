@@ -5,7 +5,8 @@ Before public deployment:
 - Add authentication and per-user authorization to every conversation and memory operation.
 - Store conversation history server-side; never trust the client as the source of truth.
 - Add rate limiting and request-size limits at the edge and application layers.
-- Keep all model-provider keys server-side and rotate any exposed credentials.
+- Keep saved model-provider keys in server process memory; never persist or return them.
+- Rotate any credentials that were exposed. Profile keys are cleared when the app stops.
 - Avoid logging prompts, secrets, or personal data by default.
 - Add deletion and export controls for user data.
 - Treat model output and tool arguments as untrusted input.

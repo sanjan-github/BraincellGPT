@@ -11,12 +11,14 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, urlsplit
+from urllib.parse import parse_qs, urlparse, urlsplit
 from collections import defaultdict, deque
 from threading import Lock
 import time
 import ipaddress
 import socket
+import re
+from backend.agent import run_agent
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
@@ -28,6 +30,8 @@ MAX_HISTORY_CHARS = 24000
 MAX_HISTORY_ITEM_CHARS = 6000
 _rate_events: dict[str, deque[float]] = defaultdict(deque)
 _rate_lock = Lock()
+_profile_secrets: dict[str, str] = {}
+_profile_secrets_lock = Lock()
 
 
 def rate_limited(client_ip: str) -> bool:
@@ -335,6 +339,15 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/health":
             self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": ["groq", "openai", "anthropic", "openrouter", "nvidia_nim", "deepseek", "mistral", "xai", "together", "fireworks", "cerebras", "ollama", "lmstudio", "custom"]})
             return
+        elif path == "/api/profile-secret-status":
+            profile_id = parse_qs(urlparse(self.path).query).get("id", [""])[0]
+            if not re.fullmatch(r"[a-zA-Z0-9_-]{8,80}", profile_id):
+                self.send_json(400, {"error": "Invalid profile ID."})
+                return
+            with _profile_secrets_lock:
+                configured = bool(_profile_secrets.get(profile_id))
+            self.send_json(200, {"configured": configured})
+            return
         else:
             self.send_json(404, {"error": "Not found"})
             return
@@ -352,7 +365,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = urlparse(self.path).path
-        if route not in ("/api/chat", "/api/test-connection"):
+        if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/agent"):
             self.send_json(404, {"error": "Not found"})
             return
         if self.client_address[0] not in ("127.0.0.1", "::1"):
@@ -373,6 +386,42 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 self.send_json(400, {"error": "Request body must be a JSON object."})
                 return
+            if route == "/api/profile-secret":
+                profile_id = payload.get("profile_id", "")
+                api_key = payload.get("api_key", "")
+                if not isinstance(profile_id, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{8,80}", profile_id):
+                    self.send_json(400, {"error": "Invalid profile ID."})
+                    return
+                if not isinstance(api_key, str) or len(api_key) > 500:
+                    self.send_json(400, {"error": "API key is too long or invalid."})
+                    return
+                with _profile_secrets_lock:
+                    if api_key.strip():
+                        _profile_secrets[profile_id] = api_key.strip()
+                    else:
+                        _profile_secrets.pop(profile_id, None)
+                self.send_json(200, {"ok": True, "configured": bool(api_key.strip())})
+                return
+            if route == "/api/agent":
+                task = payload.get("task", "")
+                if not isinstance(task, str) or not task.strip() or len(task) > 12000:
+                    self.send_json(400, {"error": "Provide a task up to 12,000 characters."})
+                    return
+                history = payload.get("history", [])
+                if not isinstance(history, list):
+                    history = []
+                profile_id = payload.get("profile_id", "")
+                with _profile_secrets_lock:
+                    saved_key = _profile_secrets.get(profile_id, "") if isinstance(profile_id, str) else ""
+                result = run_agent(
+                    task.strip(), history, ROOT,
+                    payload.get("provider", "groq") if isinstance(payload.get("provider", "groq"), str) else "groq",
+                    saved_key, payload.get("base_url", "") if isinstance(payload.get("base_url", ""), str) else "",
+                    payload.get("model", "") if isinstance(payload.get("model", ""), str) else "",
+                    os.environ, allow_edits=payload.get("allow_edits") is True,
+                )
+                self.send_json(200, result)
+                return
             message = str(payload.get("message", "")).strip()
             if route == "/api/test-connection":
                 message = "Reply with exactly: connection successful"
@@ -389,9 +438,15 @@ class Handler(BaseHTTPRequestHandler):
             def text_field(name: str, default: str = "") -> str:
                 value = payload.get(name, default)
                 return value if isinstance(value, str) else default
+            profile_id = text_field("profile_id")
+            with _profile_secrets_lock:
+                saved_key = _profile_secrets.get(profile_id, "")
+            # An explicitly entered key is used only for the connection check; normal
+            # chat requests resolve their credential from process memory or .env.
+            supplied_key = text_field("api_key") if route == "/api/test-connection" else ""
             reply = generate_reply(
                 message, history, text_field("personality", "normal"),
-                text_field("provider", "groq"), text_field("api_key"),
+                text_field("provider", "groq"), supplied_key or saved_key,
                 text_field("base_url"), text_field("model")
             )
             if route == "/api/test-connection":
@@ -402,6 +457,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": "Invalid JSON request."})
         except RuntimeError as exc:
             self.send_json(502, {"error": str(exc)})
+        except ValueError as exc:
+            self.send_json(400, {"error": str(exc)})
         except Exception:
             self.send_json(500, {"error": "Unexpected server error. Check the terminal for details."})
 
