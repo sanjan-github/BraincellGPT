@@ -10,7 +10,7 @@
    Design Tokens — Apple SF Pro, Cosmic Space Architecture
    ========================================================================== */
 :root {
-  --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", -system-ui, sans-serif;
+  --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
 
   /* Fibonacci Spacing */
   --space-1: 5px;
@@ -47,7 +47,7 @@
   --text-primary: #FFFFFF;
   --text-secondary: #9DA5B8;
   --text-tertiary: #636A7D;
-  --composer-bg: rgba(14, 18, 28, 0.88);
+  --composer-bg: rgba(0, 0, 0, 0.88);
 
   --color-accent: #0084FF;
   --color-accent-hover: #1A94FF;
@@ -120,7 +120,6 @@ button:active {
   gap: var(--space-3);
   position: relative;
   z-index: 1;
-  overflow: hidden;
 }
 
 /* ==========================================================================
@@ -373,8 +372,9 @@ button:active {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   position: relative;
-  overflow: hidden;
 }
 
 /* Top Navigation Bar */
@@ -477,7 +477,9 @@ button:active {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding: 0 var(--space-4);
+  min-height: 0;
+  min-width: 0;
+  padding: 30px var(--space-4) 0;
   scrollbar-width: thin;
 }
 
@@ -506,6 +508,7 @@ button:active {
 /* Interactive 3D Earth Container */
 .globe-wrapper {
   position: relative;
+  z-index: 100;
   width: 200px;
   height: 200px;
   margin-bottom: var(--space-3);
@@ -961,8 +964,8 @@ button:active {
 /* A quieter, more editorial surface: let the Earth and conversation carry the page. */
 :root {
   --color-base: #07090d;
-  --color-sidebar: #090c11;
-  --color-surface: transparent;
+  --color-sidebar: rgba(9, 12, 18, 0.44);
+  --color-surface: rgba(14, 18, 27, 0.42);
   --color-surface-hover: rgba(255, 255, 255, 0.045);
   --color-border: rgba(220, 231, 244, 0.09);
   --color-border-hover: rgba(220, 231, 244, 0.2);
@@ -972,29 +975,31 @@ button:active {
   --text-primary: #f1f2f4;
   --text-secondary: #9ba4b1;
   --text-tertiary: #6e7784;
-  --composer-bg: transparent;
+  --composer-bg: rgba(30, 41, 59, 0.6);
 }
 
 .app-shell { padding: 0; gap: 0; }
 .sidebar {
-  background: var(--color-sidebar);
+  background: rgba(15, 23, 42, 0.5);
   border: 0;
-  border-right: 1px solid rgba(220, 231, 244, 0.07);
+  border-right: 0;
   border-radius: 0;
   box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
   padding: 22px 16px 16px;
 }
 .sidebar-header { border-bottom-color: rgba(220, 231, 244, 0.07); padding-bottom: 16px; }
-.brand-icon { color: #91abc0; }
+.sidebar-header { border-bottom: 0; padding-bottom: 0; }
+.brand-icon { display: none; }
+.btn-sidebar-collapse { display: none; }
 .btn-new-chat {
   justify-content: flex-start;
   margin-top: 18px;
   padding: 10px 2px;
   border: 0;
   border-radius: 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 0;
   background: transparent;
   color: #e5e7eb;
   font-weight: 500;
@@ -1002,15 +1007,14 @@ button:active {
 .btn-new-chat:hover { background: transparent; color: #fff; border-color: var(--color-border-hover); }
 .search-chats-bar {
   border: 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 0;
   border-radius: 0;
   background: transparent;
   padding: 8px 2px;
 }
-.history-item { border: 0; border-left: 2px solid transparent; border-radius: 0; padding-left: 10px; }
+.history-item { border: 0; border-radius: 0; padding-left: 10px; }
 .history-item:hover, .history-item.active { background: rgba(255, 255, 255, 0.035); }
-.history-item.active { border-left-color: #91abc0; }
-.sidebar-user-pill { background: transparent; border: 0; border-top: 1px solid var(--color-border); border-radius: 0; padding: 14px 2px 0; }
+.sidebar-user-pill { background: transparent; border: 0; border-radius: 0; padding: 14px 2px 0; }
 .btn-sidebar-toggle, .icon-btn-pill {
   background: transparent;
   border: 0;
@@ -1023,22 +1027,25 @@ button:active {
 .status-beacon { background: #84a98c; box-shadow: none; }
 .globe-wrapper { width: 232px; height: 232px; margin-bottom: 6px; }
 #globeCanvas { width: 232px; height: 232px; }
+.chat-viewport, .nav-history-wrapper, .drawer-body { scrollbar-width: none; }
+.chat-viewport { padding-top: 30px; }
+.chat-viewport::-webkit-scrollbar, .nav-history-wrapper::-webkit-scrollbar, .drawer-body::-webkit-scrollbar { display: none; }
 .hero-title-main { font-size: clamp(31px, 4vw, 42px); font-weight: 620; letter-spacing: -0.045em; text-shadow: none; }
 .hero-caption { color: #9da8b5; text-shadow: none; letter-spacing: 0.01em; margin-bottom: 32px; }
 .composer-container {
-  background: transparent;
-  border: 0;
-  border-top: 1px solid rgba(220, 231, 244, 0.16);
-  border-radius: 0;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  padding: 14px 0 8px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(220, 235, 250, 0.23);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 14px 38px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  padding: 14px 16px 10px;
 }
-.composer-container:focus-within { border-color: rgba(220, 231, 244, 0.3); box-shadow: none; }
+.composer-container:focus-within { border-color: rgba(198, 222, 242, 0.52); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 0 2px rgba(126, 163, 194, 0.1), 0 14px 38px rgba(0, 0, 0, 0.2); }
 .composer-textarea { min-height: 64px; }
-.composer-bottom-bar { border-top: 0; padding-top: 4px; }
+.composer-bottom-bar { border-top: 0; padding-top: 4px; justify-content: flex-end; }
 .btn-submit-pill { border-radius: 50%; background: #d7e0e8; box-shadow: none; }
+.btn-submit-pill { margin-left: auto; align-self: flex-end; position: relative; top: -5px; }
 .btn-submit-pill:hover:not(:disabled) { background: #fff; box-shadow: none; }
 .user-message-panel {
   background: transparent;
@@ -1052,13 +1059,20 @@ button:active {
 .assistant-message-panel { background: transparent; border: 0; border-radius: 0; padding-inline: 0; }
 .thinking-notice { background: transparent; border: 0; border-radius: 0; padding-inline: 0; }
 .thinking-dot { background: #9bbad4; box-shadow: none; }
-.drawer-panel { box-shadow: -14px 0 36px rgba(0, 0, 0, 0.24); }
+.drawer-panel {
+  background: rgba(12, 14, 20, 0.62);
+  backdrop-filter: blur(14px) saturate(145%);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  box-shadow: -14px 0 36px rgba(0, 0, 0, 0.24);
+}
 
 @media (max-width: 768px) {
   .sidebar { border-right: 0; }
   .sidebar.mobile-open { box-shadow: 12px 0 30px rgba(0, 0, 0, 0.3); }
   .globe-wrapper, #globeCanvas { width: 204px; height: 204px; }
   .hero-title-main { font-size: 30px; }
+  .chat-viewport { padding-top: 24px; }
+  .composer-container { padding: 12px 14px 9px; }
 }
 </style>
 </head>
@@ -1074,14 +1088,8 @@ button:active {
   <aside class="sidebar" id="appSidebar">
     <div class="sidebar-header">
       <a href="/" class="brand-badge">
-        <div class="brand-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>
-        </div>
         <span class="brand-title">BraincellGPT</span>
       </a>
-      <button class="btn-sidebar-collapse" id="collapseSidebarBtn" aria-label="Collapse sidebar" title="Collapse sidebar">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
-      </button>
     </div>
 
     <!-- "+ New Chat" -->
@@ -1116,9 +1124,6 @@ button:active {
           <span class="user-name-secondary">Active Profile</span>
         </div>
       </div>
-      <button class="btn-sidebar-settings" id="sidebarSettingsBtn" aria-label="Settings" title="Settings">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-      </button>
     </div>
   </aside>
 
@@ -1131,7 +1136,6 @@ button:active {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
         </button>
         <div class="active-provider-pill" id="topbarModelBadge">
-          <span class="status-beacon"></span>
           <span id="currentModelDisplay">Groq · Llama 3.3</span>
         </div>
       </div>
@@ -1161,10 +1165,6 @@ button:active {
             <form id="chatForm">
               <textarea class="composer-textarea" id="messageInput" rows="1" maxlength="12000" placeholder="Type a message or prompt..." aria-label="Message BraincellGPT"></textarea>
               <div class="composer-bottom-bar">
-                <div class="model-info-pill" id="modelDisplayPill">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>
-                  <span id="modelInfoText">Llama 3.3</span>
-                </div>
 
                 <button class="btn-submit-pill" id="send" type="submit" aria-label="Send message">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
@@ -1274,17 +1274,14 @@ button:active {
   const baseUrlInput = document.querySelector("#baseUrl");
   const modelNameInput = document.querySelector("#modelName");
   const openSettingsTop = document.querySelector("#openSettingsTop");
-  const sidebarSettingsBtn = document.querySelector("#sidebarSettingsBtn");
   const topbarModelBadge = document.querySelector("#topbarModelBadge");
   const currentModelDisplay = document.querySelector("#currentModelDisplay");
-  const modelInfoText = document.querySelector("#modelInfoText");
   const closeSettingsBtn = document.querySelector("#closeSettings");
   const settingsDrawer = document.querySelector("#settingsDrawer");
   const drawerOverlay = document.querySelector("#drawerOverlay");
   const activeThreadTitle = document.querySelector("#activeThreadTitle");
   const appSidebar = document.querySelector("#appSidebar");
   const sidebarToggleBtn = document.querySelector("#sidebarToggleBtn");
-  const collapseSidebarBtn = document.querySelector("#collapseSidebarBtn");
   const sidebarOverlay = document.querySelector("#sidebarOverlay");
 
   // Reliable Sidebar Collapse & Restore for Desktop and Mobile
@@ -1298,7 +1295,6 @@ button:active {
   }
 
   sidebarToggleBtn.addEventListener("click", toggleSidebar);
-  collapseSidebarBtn.addEventListener("click", toggleSidebar);
   sidebarOverlay.addEventListener("click", toggleSidebar);
 
   // Settings Drawer Controls
@@ -1312,7 +1308,7 @@ button:active {
     drawerOverlay.classList.remove("open");
   }
 
-  [openSettingsTop, sidebarSettingsBtn, topbarModelBadge].forEach(btn => {
+  [openSettingsTop, topbarModelBadge].forEach(btn => {
     if (btn) btn.addEventListener("click", openDrawer);
   });
   if (closeSettingsBtn) closeSettingsBtn.addEventListener("click", closeDrawer);
@@ -1379,7 +1375,6 @@ button:active {
     const customModel = modelNameInput.value.trim();
     const display = customModel ? `${providerLabel} · ${customModel}` : `${providerLabel} · Llama 3.3`;
     currentModelDisplay.textContent = display;
-    if (modelInfoText) modelInfoText.textContent = customModel || "Llama 3.3";
   }
 
   function loadActiveProfile() {
@@ -1638,18 +1633,22 @@ let spaceAngleY = 0;
     initStars();
   });
 
-  const STAR_COUNT = 150;
+  const STAR_COUNT = 1800;
+  const reduceSpaceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const stars = [];
 
   function initStars() {
     stars.length = 0;
     for (let i = 0; i < STAR_COUNT; i++) {
+      const azimuth = Math.random() * Math.PI * 2;
+      const vertical = Math.random() * 2 - 1;
+      const ring = Math.sqrt(1 - vertical * vertical);
       stars.push({
-        x: (Math.random() - 0.5) * spaceW * 2.5,
-        y: (Math.random() - 0.5) * spaceH * 2.5,
-        z: Math.random() * 900 + 100,
-        size: Math.random() * 0.7 + 0.25,
-        baseAlpha: Math.random() * 0.22 + 0.08,
+        x: ring * Math.cos(azimuth),
+        y: vertical,
+        z: ring * Math.sin(azimuth),
+        size: Math.random() < 0.035 ? Math.random() * 1.0 + 1.4 : Math.random() * 0.7 + 0.45,
+        baseAlpha: Math.random() * 0.35 + 0.38,
         twinkleSpeed: Math.random() * 0.02 + 0.005,
         twinklePhase: Math.random() * Math.PI * 2,
         hue: Math.random() < 0.25 ? 210 : Math.random() < 0.1 ? 35 : 0
@@ -1658,48 +1657,56 @@ let spaceAngleY = 0;
   }
   initStars();
 
-  const nebulae = [];
+  const nebulae = [{ x: 0, y: 0, r: 620, color: "rgba(58, 70, 96, 0.09)" }];
 
-  function renderSpace() {
-    sCtx.fillStyle = "#05070D";
+  let previousSpaceFrame = 0;
+  function renderSpace(frameTime = performance.now()) {
+    sCtx.fillStyle = "#03050a";
     sCtx.fillRect(0, 0, spaceW, spaceH);
 
     const centerX = spaceW / 2;
     const centerY = spaceH / 2;
+    const deltaSeconds = previousSpaceFrame ? Math.min((frameTime - previousSpaceFrame) / 1000, 0.05) : 0;
+    previousSpaceFrame = frameTime;
 
     // Render distant interstellar dust nebulae
     nebulae.forEach(n => {
       const nx = centerX + n.x + spaceAngleY * 85;
       const ny = centerY + n.y - spaceAngleX * 85;
-      const grad = sCtx.createRadialGradient(nx, ny, 20, nx, ny, n.r);
+      const grad = sCtx.createRadialGradient(nx, ny, 60, nx, ny, n.r);
       grad.addColorStop(0, n.color);
       grad.addColorStop(1, "transparent");
       sCtx.fillStyle = grad;
       sCtx.fillRect(nx - n.r, ny - n.r, n.r * 2, n.r * 2);
     });
 
-    const time = performance.now() * 0.001;
+    const time = frameTime * 0.001;
+    if (!reduceSpaceMotion) spaceAngleY += 0.042 * deltaSeconds;
     const cosY = Math.cos(spaceAngleY * 0.3);
     const sinY = Math.sin(spaceAngleY * 0.3);
     const cosX = Math.cos(spaceAngleX * 0.3);
     const sinX = Math.sin(spaceAngleX * 0.3);
+    const focalLength = Math.min(spaceW, spaceH) * 0.62;
 
     for (let i = 0; i < stars.length; i++) {
       const s = stars[i];
       const x1 = s.x * cosY + s.z * sinY;
       const z1 = -s.x * sinY + s.z * cosY;
       const y2 = s.y * cosX - z1 * sinX;
+      if (z1 <= 0.08) continue;
 
-      const px = centerX + x1;
-      const py = centerY + y2;
+      const perspective = focalLength / z1;
+      const px = centerX + x1 * perspective;
+      const py = centerY + y2 * perspective;
 
       if (px < -20 || px > spaceW + 20 || py < -20 || py > spaceH + 20) continue;
 
-      const twinkle = Math.sin(time * s.twinkleSpeed * 60 + s.twinklePhase) * 0.06;
-      const alpha = Math.max(0.025, Math.min(0.32, s.baseAlpha + twinkle));
+      const twinkle = Math.sin(time * s.twinkleSpeed * 60 + s.twinklePhase) * 0.11;
+      const alpha = Math.max(0.22, Math.min(0.9, s.baseAlpha + twinkle));
+      const radius = s.size * Math.min(1.35, 0.78 + z1 * 0.3);
 
       sCtx.beginPath();
-      sCtx.arc(px, py, s.size, 0, Math.PI * 2);
+      sCtx.arc(px, py, radius, 0, Math.PI * 2);
       if (s.hue === 210) {
         sCtx.fillStyle = `rgba(180, 215, 255, ${alpha})`;
       } else if (s.hue === 35) {
@@ -1899,7 +1906,7 @@ let spaceAngleY = 0;
       const x = cosPhi * sinTheta;
       const y = cosTheta;
       const z = sinPhi * sinTheta;
-      const u = 1 - (lon / LON_BANDS);
+      const u = lon / LON_BANDS;
       const v = 1 - (lat / LAT_BANDS);
 
       normals.push(x, y, z);
@@ -2012,18 +2019,21 @@ let spaceAngleY = 0;
     ]);
   }
 
-  // Initial Orientation: Centered on Eurasia / India like uploaded screenshot
+  // Start the globe rotated 180 degrees from its previous orientation
   let currentQuat = [0, 0, 0, 1];
-  const qInitY = quatFromAxisAngle([0, 1, 0], 1.25);
+  const qInitY = quatFromAxisAngle([0, 1, 0], Math.PI);
   const qInitX = quatFromAxisAngle([1, 0, 0], 0.35);
   currentQuat = quatMultiply(qInitX, qInitY);
 
-  // Interaction: "rotate ONLY when user rotates"
+  // Slow continuous drift, with direct drag and a brief inertial follow-through.
   let isDragging = false;
   let prevX = 0;
   let prevY = 0;
   let velX = 0;
   let velY = 0;
+  const reduceGlobeMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const autoSpinSpeed = reduceGlobeMotion ? 0 : 0.072;
+  let previousEarthFrame = 0;
 
   function onPointerDown(e) {
     isDragging = true;
@@ -2081,13 +2091,18 @@ let spaceAngleY = 0;
     velY = 0;
   });
 
-  function renderEarth() {
+  function renderEarth(frameTime = performance.now()) {
+    const deltaSeconds = previousEarthFrame ? Math.min((frameTime - previousEarthFrame) / 1000, 0.05) : 0;
+    previousEarthFrame = frameTime;
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // Momentum decay to dead stop: "rotate ONLY when user rotates"
     if (!isDragging) {
+      if (autoSpinSpeed) {
+        const autoSpin = quatFromAxisAngle([0, 1, 0], autoSpinSpeed * deltaSeconds);
+        currentQuat = quatMultiply(autoSpin, currentQuat);
+      }
       if (Math.abs(velX) > 0.00008 || Math.abs(velY) > 0.00008) {
         const qY = quatFromAxisAngle([0, 1, 0], velX);
         const qX = quatFromAxisAngle([1, 0, 0], velY);
