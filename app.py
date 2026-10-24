@@ -331,7 +331,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
             ) from exc
         if provider == "groq" and exc.code == 403:
             raise RuntimeError(
-                "Groq returned HTTP 403. The key may be valid, but this model can be blocked by your Groq organization/project permissions. In Groq Console, check Settings → Organization → Limits and Settings → Projects → Limits. The model ID openai/gpt-oss-120b is a supported Groq model; try the default llama-3.3-70b-versatile to see whether the restriction is specific to GPT-OSS. If the provider detail below names a different cause, follow that message."
+                "Groq returned HTTP 403: the request was denied. Check the provider detail below, model access, and your Groq organization/project permissions."
                 + suffix
             ) from exc
         if exc.code in (400, 401, 403):

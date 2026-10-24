@@ -14,6 +14,7 @@ from threading import BoundedSemaphore
 MAX_CONCURRENT_PROVIDER_REQUESTS = 8
 PROVIDER_SLOTS = BoundedSemaphore(MAX_CONCURRENT_PROVIDER_REQUESTS)
 MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
+DEFAULT_USER_AGENT = "BrainCellGPT/0.1"
 
 
 class ProviderResponseTooLarge(ValueError):
@@ -138,6 +139,8 @@ def open_provider_request(request, timeout: int, pinned_addresses=None):
     the validated address. The URL remains unchanged for Host, SNI, and TLS
     certificate verification.
     """
+    if not request.has_header("User-agent"):
+        request.add_unredirected_header("User-Agent", DEFAULT_USER_AGENT)
     if pinned_addresses is None:
         opener = urllib.request.build_opener(NoRedirectHandler())
     else:

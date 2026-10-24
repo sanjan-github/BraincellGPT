@@ -66,6 +66,19 @@ class PublicAddressResolutionTests(unittest.TestCase):
 
 
 class PinnedHttpsConnectionTests(unittest.TestCase):
+    def test_provider_requests_identify_braincellgpt_without_overriding_explicit_agent(self):
+        opener = MagicMock()
+        with patch("backend.provider_http.urllib.request.build_opener", return_value=opener):
+            default_request = urllib.request.Request("https://provider.example/v1")
+            provider_http.open_provider_request(default_request, timeout=4)
+            explicit_request = urllib.request.Request(
+                "https://provider.example/v1", headers={"User-Agent": "Provider SDK/1.0"}
+            )
+            provider_http.open_provider_request(explicit_request, timeout=4)
+
+        self.assertEqual(default_request.get_header("User-agent"), "BrainCellGPT/0.1")
+        self.assertEqual(explicit_request.get_header("User-agent"), "Provider SDK/1.0")
+
     def test_connects_to_pinned_ip_without_dns_and_keeps_hostname_for_tls(self):
         target = (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, ("93.184.216.34", 443))
         raw_socket = MagicMock()

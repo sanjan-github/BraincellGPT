@@ -193,6 +193,7 @@ class ApiReliabilityTests(unittest.TestCase):
                 app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
 
         self.assertNotIn("secret-key", str(raised.exception))
+        self.assertNotIn("llama-3.3", str(raised.exception))
         self.assertTrue(error_body.closed)
 
 
