@@ -26,6 +26,10 @@ and extension-host APIs are outside this backend port.
 - Configured MCP stdio tool and resource discovery/reads, with modern and legacy
   protocol negotiation, per-call approval, bounded JSON-RPC frames, and filtered
   child environments.
+- Remote Streamable HTTP MCP tool/resource discovery and calls over JSON or SSE,
+  with modern stateless and legacy session negotiation, pinned public HTTPS
+  destinations, redirect rejection, environment-backed request headers, and
+  `x-mcp-header` tool parameter mirroring with schema validation.
 - Reversible file-edit checkpoints and explicit restore/redo operations.
 - Per-agent-run grouped checkpoint history with multi-file restore and redo groups.
 - OpenAI-compatible and Anthropic server-sent event parsing, incremental text
@@ -35,7 +39,8 @@ and extension-host APIs are outside this backend port.
 
 ## Remaining backend work
 
-1. Add remote Streamable HTTP MCP servers and authorization support.
+1. Add OAuth 2.1 authorization discovery, token lifecycle, and reauthorization
+   for remote MCP servers; configured bearer/API-key headers are supported now.
 2. Expand provider adapters and model capability metadata, then add semantic
   conversation compaction and image inputs.
 3. Add end-to-end acceptance coverage for task persistence, approval, streaming,
@@ -63,14 +68,18 @@ the stream. Resolve that specific action with `POST /api/agent/approvals` using
 is in memory, bounded to 32 pending actions, and expires decisions after three
 minutes.
 
-Configure up to eight local MCP stdio servers in the `BRAINCELLGPT_MCP_SERVERS`
-environment variable as a JSON list. Each entry has `name`, `command`, optional
-`args`, and optional `env`; use `${VARIABLE_NAME}` in an `env` value to pass a
-specific host environment variable to that server. MCP servers are available
-for streaming Code, Debug, or Orchestrator runs. Every MCP tool call pauses for
-the same session-scoped approval operation. The adapter starts processes
-without a shell, filters inherited environment variables, and keeps each
-process only for the lifetime of one agent run.
+Configure up to eight local or remote MCP servers in the
+`BRAINCELLGPT_MCP_SERVERS` environment variable as a JSON list. A local entry
+has `name`, `command`, optional `args`, and optional `env`; use
+`${VARIABLE_NAME}` in an `env` value to pass a specific host environment
+variable to that process. A remote entry has an HTTPS `url` and optional
+`headers`; credential headers must reference environment variables, such as
+`"Authorization": "Bearer ${MCP_ACCESS_TOKEN}"`. Remote URLs must resolve only
+to public IP addresses. MCP servers are available for streaming Code, Debug,
+or Orchestrator runs. Every MCP tool call pauses for the same session-scoped
+approval operation. Local processes start without a shell and with filtered
+environments, and remain alive only during one agent run. Remote calls use the
+configured URL's validated IP addresses for that run and do not follow redirects.
 
 ```json
 [
@@ -79,6 +88,18 @@ process only for the lifetime of one agent run.
     "command": "npx",
     "args": ["-y", "@example/mcp-server"],
     "env": {"SERVICE_TOKEN": "${PROJECT_MCP_TOKEN}"}
+  }
+]
+```
+
+Remote server example:
+
+```json
+[
+  {
+    "name": "remote-tools",
+    "url": "https://mcp.example.com/mcp",
+    "headers": {"Authorization": "Bearer ${MCP_ACCESS_TOKEN}"}
   }
 ]
 ```

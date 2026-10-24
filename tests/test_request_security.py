@@ -23,6 +23,30 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
         self.server.server_close()
         self.server_thread.join(timeout=2)
 
+    def test_cross_origin_chat_is_rejected_before_provider_is_called(self):
+        class RequestStub:
+            path = "/api/chat"
+            client_address = ("127.0.0.1", 54321)
+            headers = {
+                "Host": f"127.0.0.1:{app.PORT}",
+                "Origin": "http://127.0.0.1:1",
+                "Sec-Fetch-Site": "cross-site",
+            }
+
+            def is_trusted_local_request(self):
+                return app.Handler.is_trusted_local_request(self)
+
+            def send_json(self, status, body):
+                self.response = (status, body)
+
+        request = RequestStub()
+        with patch("app.generate_reply") as provider:
+            app.Handler.do_POST(request)
+
+        self.assertEqual(request.response[0], 403)
+        self.assertIn("trusted loopback", request.response[1]["error"])
+        provider.assert_not_called()
+
     def test_agent_endpoint_passes_mode_and_command_approval_to_backend(self):
         connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
         body = json.dumps({
