@@ -1404,6 +1404,7 @@ button:active {
       <select class="form-field" id="providerSelect">
         <option value="groq">Groq (Ultra-fast Llama 3.3)</option>
         <option value="openai">OpenAI (GPT-4o mini)</option>
+        <option value="azure_openai">Azure OpenAI</option>
         <option value="gemini">Google Gemini</option>
         <option value="anthropic">Anthropic Claude</option>
         <option value="openrouter">OpenRouter</option>
@@ -1464,6 +1465,8 @@ button:active {
   const profileSelect = document.querySelector("#profileSelect");
   const profileNameInput = document.querySelector("#profileName");
   const baseUrlInput = document.querySelector("#baseUrl");
+  const customFields = document.querySelector("#customFields");
+  const baseUrlLabel = document.querySelector("#baseUrlLabel");
   const modelNameInput = document.querySelector("#modelName");
   const openSettingsTop = document.querySelector("#openSettingsTop");
   const topbarModelBadge = document.querySelector("#topbarModelBadge");
@@ -1575,9 +1578,19 @@ button:active {
     providerSelect.value = profile.provider;
     modelNameInput.value = profile.model || "";
     baseUrlInput.value = profile.baseUrl || "";
+    updateEndpointField();
     renderProfileOptions();
     updateModelBadge();
     refreshKeyStatus();
+  }
+
+  function updateEndpointField() {
+    const azure = providerSelect.value === "azure_openai";
+    customFields.hidden = !azure && providerSelect.value !== "custom";
+    baseUrlLabel.textContent = azure ? "Azure OpenAI v1 endpoint" : "Endpoint URL";
+    baseUrlInput.placeholder = azure
+      ? "https://your-resource.openai.azure.com/openai/v1"
+      : "https://api.example.com/v1";
   }
 
   persistProfiles();
@@ -1586,6 +1599,7 @@ button:active {
   providerSelect.addEventListener("change", () => {
     activeProfile().provider = providerSelect.value;
     activeProfile().name = providerSelect.options[providerSelect.selectedIndex].text.split(" (")[0];
+    updateEndpointField();
     persistProfiles();
     renderProfileOptions();
     updateModelBadge();

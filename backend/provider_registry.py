@@ -13,3 +13,36 @@ OPENAI_COMPATIBLE_PROVIDERS = {
     "fireworks": {"label": "Fireworks AI", "base_url": "https://api.fireworks.ai/inference/v1", "model": "accounts/fireworks/models/llama-v3p3-70b-instruct", "env_key": "FIREWORKS_API_KEY", "env_model": "FIREWORKS_MODEL"},
     "cerebras": {"label": "Cerebras", "base_url": "https://api.cerebras.ai/v1", "model": "llama-3.3-70b", "env_key": "CEREBRAS_API_KEY", "env_model": "CEREBRAS_MODEL"},
 }
+
+AZURE_OPENAI_PROVIDER = {
+    "label": "Azure OpenAI",
+    "env_key": "AZURE_OPENAI_API_KEY",
+    "env_endpoint": "AZURE_OPENAI_ENDPOINT",
+    "env_model": "AZURE_OPENAI_DEPLOYMENT",
+    "api_style": "azure-openai-v1",
+    "auth_header": "api-key",
+    "capabilities": {"chat": True, "streaming": True, "tools": True, "image_payload": "openai", "model_support": "deployment-dependent"},
+}
+
+
+def provider_capabilities() -> dict[str, dict]:
+    """Describe transport features separately from model-specific support."""
+    capabilities = {
+        name: {
+            "api_style": "openai-chat-completions",
+            "chat": True,
+            "streaming": True,
+            "tools": True,
+            "image_payload": "openai",
+            "model_support": "model-dependent",
+        }
+        for name in OPENAI_COMPATIBLE_PROVIDERS
+    }
+    capabilities["azure_openai"] = dict(AZURE_OPENAI_PROVIDER["capabilities"], api_style=AZURE_OPENAI_PROVIDER["api_style"])
+    capabilities.update({
+        "anthropic": {"api_style": "anthropic-messages", "chat": True, "streaming": True, "tools": True, "image_payload": "anthropic", "model_support": "model-dependent"},
+        "ollama": {"api_style": "openai-compatible-local", "chat": True, "streaming": True, "tools": True, "image_payload": "openai", "model_support": "model-dependent"},
+        "lmstudio": {"api_style": "openai-compatible-local", "chat": True, "streaming": True, "tools": True, "image_payload": "openai", "model_support": "model-dependent"},
+        "custom": {"api_style": "openai-compatible-custom", "chat": True, "streaming": True, "tools": True, "image_payload": "openai", "model_support": "server-dependent"},
+    })
+    return capabilities

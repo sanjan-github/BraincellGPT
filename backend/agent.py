@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import difflib
 import urllib.error
@@ -14,6 +15,7 @@ import urllib.request
 import re
 import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -22,25 +24,35 @@ from urllib.parse import urlsplit
 from backend.agent_state import SESSION_ID_RE, get_agent_store
 from backend.agent_modes import MODES, normalize_mode
 from backend import mcp_stdio
+from backend import workspace_fs
 from backend.provider_http import MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 from backend.media import anthropic_content, normalize_images, openai_content
-from backend.provider_registry import OPENAI_COMPATIBLE_PROVIDERS
+from backend.provider_registry import AZURE_OPENAI_PROVIDER, OPENAI_COMPATIBLE_PROVIDERS
 
 
 MAX_FILE_BYTES = 200_000
 MAX_TOOL_RESULT = 24_000
 MAX_STEPS = 8
+MAX_TOTAL_TOOL_CALLS = 32
+MAX_TOTAL_TOOL_OUTPUT_CHARS = 200_000
+MAX_AGENT_SECONDS = 300
+MAX_FILES_SCANNED_PER_TASK = 10_000
+MAX_FILE_BYTES_READ_PER_TASK = 50_000_000
 MAX_AGENT_CONTEXT_CHARS = 96_000
 MAX_RETAINED_TOOL_RESULT_CHARS = 10_000
 MAX_PROVIDER_RESPONSE_BYTES = SHARED_MAX_PROVIDER_RESPONSE_BYTES
 _PROVIDER_SLOTS = PROVIDER_SLOTS
 MAX_COMMAND_SECONDS = 60
 MAX_COMMAND_OUTPUT_BYTES = 16_000
+MAX_CONCURRENT_COMMANDS = 4
 MAX_DIFF_BYTES = 100_000
 MAX_DIFF_PREVIEW_CHARS = 24_000
 MAX_TOOL_ARGUMENT_BYTES = 64_000
 TOOL_CALL_ID_RE = re.compile(r"^[\x21-\x7e]{1,256}$")
 TOOL_FUNCTION_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_COMMAND_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_COMMANDS)
+_RESTORE_LOCKS: dict[str, threading.Lock] = {}
+_RESTORE_LOCKS_GUARD = threading.Lock()
 IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build", ".idea", ".vscode", ".ssh", ".aws", ".azure", ".gnupg", ".kube"}
 IGNORED_FILES = {".env", ".env.local"}
 PROTECTED_FILE_PATTERNS = (
@@ -59,6 +71,16 @@ def _is_ignored_dir(name: str) -> bool:
 
 def _is_protected_file(path: Path) -> bool:
     return path.name in IGNORED_FILES or any(pattern.fullmatch(path.name) or pattern.match(path.name) for pattern in PROTECTED_FILE_PATTERNS)
+
+
+def _read_workspace_bytes(root: Path, path: Path, limit: int) -> bytes:
+    relative = path.relative_to(root.resolve()).as_posix()
+    try:
+        return workspace_fs.read_bytes(root, relative, limit)
+    except FileNotFoundError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise ValueError("Workspace file could not be opened safely.") from exc
 
 
 def _read_provider_json(response):
@@ -143,11 +165,20 @@ def _safe_path(root: Path, relative: str) -> Path:
         raise ValueError("Path is outside the project workspace.") from exc
     if any(_is_ignored_dir(part) for part in relative_parts) or _is_protected_file(candidate):
         raise ValueError("Access to this project path is disabled.")
+    try:
+        if candidate.is_file() and candidate.stat().st_nlink > 1:
+            raise ValueError("Access through hard-linked files is disabled.")
+    except OSError as exc:
+        raise ValueError("The project path could not be safely inspected.") from exc
     return candidate
 
 
-def _write_text_atomically(path: Path, content: str) -> None:
+def _write_text_atomically(path: Path, content: str, root: Path | None = None) -> None:
     """Replace a workspace text file atomically so failed writes cannot truncate it."""
+    if root is not None:
+        relative = path.relative_to(root.resolve()).as_posix()
+        workspace_fs.atomic_write(root, relative, content.encode("utf-8"))
+        return
     temporary_path = None
     existing_mode = None
     try:
@@ -190,8 +221,14 @@ def _visible_files(root: Path, directory: str = ""):
         dirs[:] = sorted(d for d in dirs if not _is_ignored_dir(d) and not (Path(current) / d).is_symlink())
         for name in sorted(files):
             path = Path(current) / name
-            if not _is_protected_file(path) and not path.is_symlink():
-                yield path
+            if _is_protected_file(path) or path.is_symlink():
+                continue
+            try:
+                if path.stat().st_nlink > 1:
+                    continue
+            except OSError:
+                continue
+            yield path
 
 
 def _edit_target(path: Path, mode: str) -> None:
@@ -210,10 +247,10 @@ def _record_checkpoint(session_id: str | None, root: Path, path: Path, group_id:
     if not session or Path(session["workspace"]).resolve() != root.resolve():
         raise ValueError("Agent session was not found for this workspace.")
     existed = path.exists()
-    previous = path.read_bytes() if existed else None
+    relative = path.relative_to(root.resolve()).as_posix()
+    previous = _read_workspace_bytes(root, path, MAX_FILE_BYTES) if existed else None
     if previous is not None and len(previous) > MAX_FILE_BYTES:
         raise ValueError("Files larger than 200 KB cannot be checkpointed or edited.")
-    relative = path.relative_to(root.resolve()).as_posix()
     return get_agent_store().add_checkpoint(session_id, relative, previous, existed, group_id)
 
 
@@ -232,49 +269,195 @@ def _bounded_command_output(stream, results: dict, key: str) -> None:
     results[key] = (output.decode("utf-8", errors="replace"), truncated)
 
 
+def _command_environment() -> dict[str, str]:
+    """Pass basic process and locale settings without inheriting provider secrets."""
+    allowed = {
+        "PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP",
+        "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "LANG", "LC_ALL",
+        "LC_CTYPE", "TZ",
+    }
+    return {key: value for key, value in os.environ.items() if key.upper() in allowed}
+
+
+class _WindowsJob:
+    """Kill contained commands and descendants when the owning job closes."""
+
+    def __init__(self):
+        import ctypes
+        from ctypes import wintypes
+
+        class BasicLimit(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_longlong),
+                ("PerJobUserTimeLimit", ctypes.c_longlong),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class IoCounters(ctypes.Structure):
+            _fields_ = [(field, ctypes.c_ulonglong) for field in (
+                "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                "ReadTransferCount", "WriteTransferCount", "OtherTransferCount",
+            )]
+
+        class ExtendedLimit(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", BasicLimit),
+                ("IoInfo", IoCounters),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        self._ctypes = ctypes
+        self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        self._kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        self._kernel32.SetInformationJobObject.restype = wintypes.BOOL
+        self._kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        self._kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        self._kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        self._kernel32.CloseHandle.restype = wintypes.BOOL
+        self.handle = self._kernel32.CreateJobObjectW(None, None)
+        if not self.handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        limits = ExtendedLimit()
+        limits.BasicLimitInformation.LimitFlags = 0x2000 | 0x0008  # kill on close; cap process count
+        limits.BasicLimitInformation.ActiveProcessLimit = 32
+        if not self._kernel32.SetInformationJobObject(self.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
+            error = ctypes.WinError(ctypes.get_last_error())
+            self.close()
+            raise error
+
+    def assign(self, process) -> bool:
+        try:
+            return bool(self._kernel32.AssignProcessToJobObject(self.handle, process._handle))
+        except (AttributeError, OSError, TypeError, ValueError):
+            return False
+
+    def close(self) -> None:
+        if self.handle:
+            self._kernel32.CloseHandle(self.handle)
+            self.handle = None
+
+
 def _execute_command(command: str, root: Path, timeout: int) -> dict:
     if not command.strip() or len(command) > 2000:
         raise ValueError("Command must contain between 1 and 2,000 characters.")
     if type(timeout) is not int or not 1 <= timeout <= MAX_COMMAND_SECONDS:
         raise ValueError(f"Command timeout must be between 1 and {MAX_COMMAND_SECONDS} seconds.")
-    process = subprocess.Popen(
-        command,
-        cwd=str(root.resolve()),
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    if not _COMMAND_SLOTS.acquire(timeout=2):
+        raise ValueError("Too many workspace commands are running. Try again shortly.")
+    process = None
+    windows_job = None
+    try:
+        popen_options = {}
+        if os.name == "nt":
+            popen_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            try:
+                windows_job = _WindowsJob()
+            except (OSError, AttributeError):
+                windows_job = None
+        else:
+            popen_options["start_new_session"] = True
+        process = subprocess.Popen(
+            command,
+            cwd=str(root.resolve()),
+            env=_command_environment(),
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            **popen_options,
+        )
+        if windows_job is not None and not windows_job.assign(process):
+            windows_job.close()
+            windows_job = None
+    except Exception:
+        if windows_job is not None:
+            windows_job.close()
+        _COMMAND_SLOTS.release()
+        raise
     streams = {}
     readers = [
         threading.Thread(target=_bounded_command_output, args=(process.stdout, streams, "stdout"), daemon=True),
         threading.Thread(target=_bounded_command_output, args=(process.stderr, streams, "stderr"), daemon=True),
     ]
-    for reader in readers:
-        reader.start()
+
+    def terminate_tree() -> None:
+        nonlocal windows_job
+        if os.name == "nt":
+            if windows_job is not None:
+                job = windows_job
+                windows_job = None
+                job.close()
+                return
+            # taskkill /T is the fallback when Job Object assignment is unavailable.
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                if process.poll() is None:
+                    process.kill()
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except OSError:
+                if process.poll() is None:
+                    process.kill()
+
     timed_out = False
     try:
-        exit_code = process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        process.kill()
-        exit_code = process.wait()
-    for reader in readers:
-        reader.join(timeout=2)
-    for stream in (process.stdout, process.stderr):
-        if stream is not None:
-            try:
-                stream.close()
-            except OSError:
-                pass
-    stdout, stdout_truncated = streams.get("stdout", ("", True))
-    stderr, stderr_truncated = streams.get("stderr", ("", True))
-    return {
-        "exit_code": exit_code,
-        "stdout": stdout,
-        "stderr": stderr,
-        "timed_out": timed_out,
-        "output_truncated": stdout_truncated or stderr_truncated,
-    }
+        for reader in readers:
+            reader.start()
+        try:
+            exit_code = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            terminate_tree()
+            exit_code = process.wait()
+        else:
+            # The shell may exit while a child still holds its pipes open.
+            terminate_tree()
+        for reader in readers:
+            reader.join(timeout=2)
+        stdout, stdout_truncated = streams.get("stdout", ("", True))
+        stderr, stderr_truncated = streams.get("stderr", ("", True))
+        return {
+            "exit_code": exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "timed_out": timed_out,
+            "output_truncated": stdout_truncated or stderr_truncated,
+        }
+    finally:
+        try:
+            if process.poll() is None:
+                terminate_tree()
+                process.wait()
+            for reader in readers:
+                if reader.ident is not None:
+                    reader.join(timeout=2)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+        finally:
+            if windows_job is not None:
+                windows_job.close()
+            _COMMAND_SLOTS.release()
 
 
 def run_tool(
@@ -286,6 +469,7 @@ def run_tool(
     mode: str = "code",
     session_id: str | None = None,
     checkpoint_group_id: str | None = None,
+    task_budget: dict | None = None,
 ) -> str:
     try:
         mode = normalize_mode(mode)
@@ -295,37 +479,60 @@ def run_tool(
         if name == "list_files":
             base = args.get("directory", "")
             files = []
+            budget_truncated = False
             for path in _visible_files(root, base):
+                if task_budget is not None:
+                    if task_budget.get("files_scanned", 0) >= MAX_FILES_SCANNED_PER_TASK:
+                        budget_truncated = True
+                        break
+                    task_budget["files_scanned"] = task_budget.get("files_scanned", 0) + 1
                 files.append(path.relative_to(root).as_posix())
                 if len(files) >= 501:
                     break
-            return json.dumps({"files": files[:500], "truncated": len(files) > 500})
+            return json.dumps({"files": files[:500], "truncated": budget_truncated or len(files) > 500})
         if name == "read_file":
             path = _safe_path(root, args.get("path"))
             if path.is_symlink() or not path.is_file():
                 raise ValueError("File does not exist.")
-            if path.stat().st_size > MAX_FILE_BYTES:
+            data = _read_workspace_bytes(root, path, MAX_FILE_BYTES)
+            if len(data) > MAX_FILE_BYTES:
                 raise ValueError("File exceeds the 200 KB read limit.")
-            return path.read_text(encoding="utf-8")[:MAX_TOOL_RESULT]
+            if task_budget is not None:
+                if task_budget.get("file_bytes_read", 0) + len(data) > MAX_FILE_BYTES_READ_PER_TASK:
+                    raise ValueError("Agent task exceeded its cumulative file-read limit.")
+                task_budget["file_bytes_read"] = task_budget.get("file_bytes_read", 0) + len(data)
+            return data.decode("utf-8")[:MAX_TOOL_RESULT]
         if name == "search_files":
             query = args.get("query")
             if not isinstance(query, str) or not query or len(query) > 500:
                 raise ValueError("Search query must be between 1 and 500 characters.")
             matches = []
+            budget_truncated = False
             for index, path in enumerate(_visible_files(root, args.get("directory", ""))):
                 if index >= 5000:
                     break
+                if task_budget is not None:
+                    if task_budget.get("files_scanned", 0) >= MAX_FILES_SCANNED_PER_TASK:
+                        budget_truncated = True
+                        break
+                    task_budget["files_scanned"] = task_budget.get("files_scanned", 0) + 1
                 try:
-                    if path.stat().st_size > MAX_FILE_BYTES:
+                    data = _read_workspace_bytes(root, path, MAX_FILE_BYTES)
+                    if len(data) > MAX_FILE_BYTES:
                         continue
-                    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                    if task_budget is not None:
+                        if task_budget.get("file_bytes_read", 0) + len(data) > MAX_FILE_BYTES_READ_PER_TASK:
+                            budget_truncated = True
+                            break
+                        task_budget["file_bytes_read"] = task_budget.get("file_bytes_read", 0) + len(data)
+                    for line_no, line in enumerate(data.decode("utf-8").splitlines(), 1):
                         if query.casefold() in line.casefold():
                             matches.append({"path": path.relative_to(root).as_posix(), "line": line_no, "text": line[:500]})
                             if len(matches) >= 100:
                                 return json.dumps({"matches": matches, "truncated": True})
                 except (UnicodeDecodeError, OSError):
                     continue
-            return json.dumps({"matches": matches, "truncated": False})
+            return json.dumps({"matches": matches, "truncated": budget_truncated})
         if name == "preview_diff":
             path = _safe_path(root, args.get("path"))
             _edit_target(path, mode)
@@ -336,7 +543,7 @@ def run_tool(
                 raise ValueError("Provide non-empty old_text and string new_text values.")
             if len(old_text.encode("utf-8")) + len(new_text.encode("utf-8")) > MAX_DIFF_BYTES:
                 raise ValueError("The requested diff preview is too large.")
-            original = path.read_text(encoding="utf-8")
+            original = _read_workspace_bytes(root, path, MAX_FILE_BYTES).decode("utf-8")
             actual = original.count(old_text)
             if actual != 1:
                 raise ValueError(f"Diff preview requires exactly one match; found {actual}. No changes were made.")
@@ -362,9 +569,8 @@ def run_tool(
                 raise ValueError("File content must be UTF-8 text no larger than 200 KB.")
             if path.exists() and path.is_dir():
                 raise ValueError("Path points to a directory.")
-            path.parent.mkdir(parents=True, exist_ok=True)
             checkpoint_id = _record_checkpoint(session_id, root, path, checkpoint_group_id)
-            _write_text_atomically(path, content)
+            _write_text_atomically(path, content, root)
             result = {"written": path.relative_to(root).as_posix(), "bytes": len(content.encode("utf-8"))}
             if checkpoint_id:
                 result["checkpoint_id"] = checkpoint_id
@@ -379,7 +585,7 @@ def run_tool(
                 raise ValueError("Provide non-empty old_text and string new_text values.")
             if len(old_text.encode("utf-8")) + len(new_text.encode("utf-8")) > MAX_DIFF_BYTES:
                 raise ValueError("The requested diff is too large.")
-            original = path.read_text(encoding="utf-8")
+            original = _read_workspace_bytes(root, path, MAX_FILE_BYTES).decode("utf-8")
             expected = args.get("expected_replacements", 1) if name == "search_replace" else 1
             if type(expected) is not int or not 1 <= expected <= 100:
                 raise ValueError("expected_replacements must be between 1 and 100.")
@@ -390,7 +596,7 @@ def run_tool(
             if len(updated.encode("utf-8")) > MAX_FILE_BYTES:
                 raise ValueError("Edited file would exceed the 200 KB limit.")
             checkpoint_id = _record_checkpoint(session_id, root, path, checkpoint_group_id)
-            _write_text_atomically(path, updated)
+            _write_text_atomically(path, updated, root)
             result = {"written": path.relative_to(root).as_posix(), "replacements": actual}
             if checkpoint_id:
                 result["checkpoint_id"] = checkpoint_id
@@ -434,23 +640,7 @@ def restore_checkpoint(session_id: str, checkpoint_id: str, root: Path) -> dict:
     checkpoint = store.get_checkpoint(checkpoint_id, session_id)
     if not checkpoint:
         raise ValueError("Checkpoint was not found for this agent session.")
-    path = _safe_path(root, checkpoint["relative_path"])
-    redo_checkpoint = _record_checkpoint(session_id, root, path)
-    if checkpoint["existed"]:
-        previous = checkpoint["previous_content"]
-        if previous is None or len(previous) > MAX_FILE_BYTES:
-            raise ValueError("Checkpoint content is invalid or too large.")
-        try:
-            content = previous.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ValueError("Checkpoint content is not valid UTF-8 text.") from exc
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _write_text_atomically(path, content)
-    elif path.exists():
-        if path.is_symlink() or not path.is_file():
-            raise ValueError("Checkpoint target is no longer a regular file.")
-        path.unlink()
-    return {"restored": path.relative_to(root.resolve()).as_posix(), "redo_checkpoint_id": redo_checkpoint}
+    return _restore_checkpoint_batch(session_id, [(checkpoint, checkpoint["relative_path"])], root, grouped=False)
 
 
 def restore_checkpoint_group(session_id: str, group_id: str, root: Path) -> dict:
@@ -465,36 +655,106 @@ def restore_checkpoint_group(session_id: str, group_id: str, root: Path) -> dict
     initial_by_path = {}
     for checkpoint in checkpoints:
         initial_by_path.setdefault(checkpoint["relative_path"], checkpoint)
-    prepared = []
-    for relative, checkpoint in initial_by_path.items():
-        path = _safe_path(root, relative)
-        if checkpoint["existed"]:
-            previous = checkpoint["previous_content"]
-            if previous is None or len(previous) > MAX_FILE_BYTES:
-                raise ValueError("Checkpoint content is invalid or too large.")
-            try:
-                content = previous.decode("utf-8")
-            except UnicodeDecodeError as exc:
-                raise ValueError("Checkpoint content is not valid UTF-8 text.") from exc
-        else:
-            content = None
-        prepared.append((path, checkpoint["existed"], content))
+    return _restore_checkpoint_batch(
+        session_id,
+        [(checkpoint, relative) for relative, checkpoint in initial_by_path.items()],
+        root,
+        grouped=True,
+    )
 
-    redo_group_id = uuid.uuid4().hex
-    for path, _existed, _content in prepared:
-        _record_checkpoint(session_id, root, path, redo_group_id)
-    for path, existed, content in prepared:
-        if existed:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            _write_text_atomically(path, content)
-        elif path.exists():
-            if path.is_symlink() or not path.is_file():
-                raise ValueError("Checkpoint target is no longer a regular file.")
-            path.unlink()
-    return {
-        "restored": [path.relative_to(root.resolve()).as_posix() for path, _existed, _content in prepared],
-        "redo_group_id": redo_group_id,
-    }
+
+def _restore_checkpoint_batch(session_id: str, entries: list[tuple[dict, str]], root: Path, grouped: bool) -> dict:
+    """Validate and snapshot every target before applying a restore as one batch."""
+    store = get_agent_store()
+    root_resolved = root.resolve()
+    with _RESTORE_LOCKS_GUARD:
+        lock = _RESTORE_LOCKS.setdefault(session_id, threading.Lock())
+    if not lock.acquire(blocking=False):
+        raise ValueError("A checkpoint restore is already running for this session.")
+    prepared = []
+    redo_group_id = uuid.uuid4().hex if grouped else None
+    created_redo_ids = []
+    try:
+        for checkpoint, relative in entries:
+            path = _safe_path(root, relative)
+            missing_parents = []
+            parent = path.parent
+            while parent != root_resolved and not parent.exists():
+                missing_parents.append(parent)
+                parent = parent.parent
+            if path.exists() or path.is_symlink():
+                if path.is_symlink() or not path.is_file():
+                    raise ValueError("Checkpoint target is no longer a regular file.")
+                current = _read_workspace_bytes(root, path, MAX_FILE_BYTES)
+                if len(current) > MAX_FILE_BYTES:
+                    raise ValueError("Checkpoint target is too large to restore safely.")
+                current_text = current.decode("utf-8")
+            else:
+                current_text = None
+            if checkpoint["existed"]:
+                previous = checkpoint["previous_content"]
+                if previous is None or len(previous) > MAX_FILE_BYTES:
+                    raise ValueError("Checkpoint content is invalid or too large.")
+                try:
+                    target_text = previous.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ValueError("Checkpoint content is not valid UTF-8 text.") from exc
+            else:
+                target_text = None
+            prepared.append((path, current_text, target_text, missing_parents))
+
+        for path, current_text, _target_text, _missing_parents in prepared:
+            redo_id = store.add_checkpoint(
+                session_id,
+                path.relative_to(root_resolved).as_posix(),
+                current_text.encode("utf-8") if current_text is not None else None,
+                current_text is not None,
+                redo_group_id,
+            )
+            created_redo_ids.append(redo_id)
+
+        try:
+            for path, _current_text, target_text, _missing_parents in prepared:
+                # Revalidate directly before each filesystem mutation.
+                _safe_path(root, path.relative_to(root_resolved).as_posix())
+                if target_text is None:
+                    if path.exists():
+                        if path.is_symlink() or not path.is_file():
+                            raise ValueError("Checkpoint target changed type during restore.")
+                        workspace_fs.unlink_file(root, path.relative_to(root_resolved).as_posix())
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    _write_text_atomically(path, target_text, root)
+        except Exception:
+            rollback_errors = []
+            for path, current_text, _target_text, _missing_parents in reversed(prepared):
+                try:
+                    if current_text is None:
+                        if path.exists() and not path.is_symlink() and path.is_file():
+                            workspace_fs.unlink_file(root, path.relative_to(root_resolved).as_posix())
+                    else:
+                        _safe_path(root, path.relative_to(root_resolved).as_posix())
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        _write_text_atomically(path, current_text, root)
+                except (OSError, ValueError):
+                    rollback_errors.append(path)
+            for _path, _current_text, _target_text, missing_parents in reversed(prepared):
+                for directory in missing_parents:
+                    try:
+                        directory.rmdir()
+                    except OSError:
+                        pass
+            store.delete_checkpoints(created_redo_ids)
+            if rollback_errors:
+                raise RuntimeError("Checkpoint restore failed and workspace rollback was incomplete.")
+            raise
+
+        restored = [path.relative_to(root_resolved).as_posix() for path, _current_text, _target_text, _missing_parents in prepared]
+        if grouped:
+            return {"restored": restored, "redo_group_id": redo_group_id}
+        return {"restored": restored[0], "redo_checkpoint_id": created_redo_ids[0]}
+    finally:
+        lock.release()
 
 
 def _anthropic_payload(model: str, messages: list[dict], tools: list[dict], max_tokens: int) -> dict:
@@ -826,7 +1086,10 @@ def _summarize_agent_context(messages: list[dict], provider: str, endpoint: str,
         ], "max_tokens": 1600, "temperature": 0}
         headers = {"Content-Type": "application/json"}
         if secret:
-            headers["Authorization"] = "Bearer " + secret
+            if provider == "azure_openai":
+                headers["api-key"] = secret
+            else:
+                headers["Authorization"] = "Bearer " + secret
     request = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
     if not _PROVIDER_SLOTS.acquire(timeout=2):
         return False
@@ -881,6 +1144,23 @@ def _provider(provider: str, api_key: str, base_url: str, model: str, environ: d
         config = OPENAI_COMPATIBLE_PROVIDERS[provider]
         endpoint = config["base_url"].rstrip("/") + "/chat/completions"
         return endpoint, api_key or environ.get(config["env_key"], ""), model or environ.get(config["env_model"], "") or config["model"], None
+    if provider == "azure_openai":
+        base_url = base_url or environ.get(AZURE_OPENAI_PROVIDER["env_endpoint"], "")
+        deployment = model or environ.get(AZURE_OPENAI_PROVIDER["env_model"], "")
+        try:
+            parsed = urlsplit(base_url)
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError("Azure OpenAI endpoint URL is invalid.") from exc
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("Azure OpenAI endpoint must be HTTPS without credentials, query strings, or fragments.")
+        if port == 0 or not deployment:
+            raise ValueError("Configure a valid Azure OpenAI endpoint and deployment name.")
+        addresses = resolve_public_addresses(parsed.hostname, port or 443)
+        endpoint = base_url.rstrip("/")
+        if not endpoint.endswith("/chat/completions"):
+            endpoint += "/chat/completions"
+        return endpoint, api_key or environ.get(AZURE_OPENAI_PROVIDER["env_key"], ""), deployment, addresses
     if provider == "anthropic":
         return (
             "https://api.anthropic.com/v1/messages",
@@ -945,9 +1225,18 @@ def run_agent(
     mcp_router: mcp_stdio.MCPToolRouter | None = None,
     checkpoint_group_id: str | None = None,
     images: list[str] | None = None,
+    _task_budget: dict | None = None,
 ) -> dict:
     provider = provider.strip().lower()
     mode = normalize_mode(mode)
+    if _task_budget is None:
+        _task_budget = {
+            "deadline": time.monotonic() + MAX_AGENT_SECONDS,
+            "tool_calls": 0,
+            "tool_output_chars": 0,
+            "files_scanned": 0,
+            "file_bytes_read": 0,
+        }
     if session_id:
         checkpoint_group_id = checkpoint_group_id or uuid.uuid4().hex
         if not SESSION_ID_RE.fullmatch(checkpoint_group_id):
@@ -994,6 +1283,9 @@ def run_agent(
     executed_mutations: set[str] = set()
     todos: list[str] = []
     for _ in range(MAX_STEPS):
+        remaining_seconds = _task_budget["deadline"] - time.monotonic()
+        if remaining_seconds <= 0:
+            raise ValueError("Agent task exceeded its 5-minute execution limit.")
         if _agent_context_size(messages) > MAX_AGENT_CONTEXT_CHARS:
             compacted = _summarize_agent_context(messages, provider, endpoint, secret, model_name, pinned_addresses)
             if compacted and event_callback is not None:
@@ -1019,13 +1311,16 @@ def run_agent(
                 payload["stream"] = True
             headers = {"Content-Type": "application/json"}
             if secret:
-                headers["Authorization"] = "Bearer " + secret
+                if provider == "azure_openai":
+                    headers["api-key"] = secret
+                else:
+                    headers["Authorization"] = "Bearer " + secret
         request = urllib.request.Request(endpoint, data=json.dumps(payload).encode(), headers=headers, method="POST")
         try:
             if not _PROVIDER_SLOTS.acquire(timeout=2):
                 raise ValueError("BrainCellGPT is busy handling other provider requests. Try again shortly.")
             try:
-                with open_provider_request(request, timeout=90, pinned_addresses=pinned_addresses) as response:
+                with open_provider_request(request, timeout=max(1, min(90, int(remaining_seconds))), pinned_addresses=pinned_addresses) as response:
                     if event_callback is None:
                         data = _read_provider_json(response)
                     elif provider == "anthropic":
@@ -1084,6 +1379,19 @@ def run_agent(
             validated_calls.append((call, function["name"], args))
         messages.append({"role": "assistant", "content": assistant.get("content"), "tool_calls": calls})
         for call, name, args in validated_calls:
+            if time.monotonic() >= _task_budget["deadline"]:
+                raise ValueError("Agent task exceeded its 5-minute execution limit.")
+            if _task_budget["tool_calls"] >= MAX_TOTAL_TOOL_CALLS:
+                raise ValueError("Agent task exceeded its total tool-call limit.")
+            _task_budget["tool_calls"] += 1
+            if name == "execute_command":
+                args = dict(args)
+                requested_command_seconds = args.get("timeout", 30)
+                if type(requested_command_seconds) is int:
+                    remaining_command_seconds = int(_task_budget["deadline"] - time.monotonic())
+                    if remaining_command_seconds < 1:
+                        raise ValueError("Agent task exceeded its 5-minute execution limit.")
+                    args["timeout"] = min(requested_command_seconds, remaining_command_seconds)
             if event_callback is not None:
                 event_callback({"type": "tool_start", "name": name, "id": call["id"]})
             signature = json.dumps([name, args], sort_keys=True, separators=(",", ":"))
@@ -1114,7 +1422,7 @@ def run_agent(
                         except (OSError, ValueError, subprocess.SubprocessError) as exc:
                             result = json.dumps({"error": str(exc)[:500]})
                     else:
-                        result = run_tool(name, args, root, True, True, mode, session_id, checkpoint_group_id)
+                        result = run_tool(name, args, root, True, True, mode, session_id, checkpoint_group_id, _task_budget)
                 else:
                     result = json.dumps({"error": "The user rejected or did not approve this tool action."})
             elif name == "new_task":
@@ -1134,6 +1442,7 @@ def run_agent(
                             mcp_router=mcp_router,
                             checkpoint_group_id=checkpoint_group_id,
                             images=images,
+                            _task_budget=_task_budget,
                         )
                         result = json.dumps({"subtask_result": child})
                     except (RuntimeError, ValueError) as exc:
@@ -1141,14 +1450,20 @@ def run_agent(
             else:
                 if mutating:
                     executed_mutations.add(signature)
-                result = run_tool(name, args, root, allow_edits, allow_commands, mode, session_id, checkpoint_group_id)
+                result = run_tool(name, args, root, allow_edits, allow_commands, mode, session_id, checkpoint_group_id, _task_budget)
             if event_callback is not None:
                 try:
                     preview = json.loads(result)
                 except json.JSONDecodeError:
                     preview = {"result": result[:1000]}
                 event_callback({"type": "tool_result", "name": name, "id": call["id"], "result": preview})
-            messages.append({"role": "tool", "tool_call_id": call["id"], "content": result[:MAX_TOOL_RESULT]})
+            result = result[:MAX_TOOL_RESULT]
+            remaining_output = MAX_TOTAL_TOOL_OUTPUT_CHARS - _task_budget["tool_output_chars"]
+            if remaining_output <= 0:
+                raise ValueError("Agent task exceeded its cumulative tool-output limit.")
+            result = result[:remaining_output]
+            _task_budget["tool_output_chars"] += len(result)
+            messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
             tool_calls_made += 1
             try:
                 tool_result = json.loads(result)

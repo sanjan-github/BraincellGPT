@@ -2,7 +2,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from backend import workspace_fs
 from backend.agent import run_tool
 
 
@@ -87,6 +89,90 @@ class AgentWorkspaceSafetyTests(unittest.TestCase):
         ))
         self.assertIn("error", result)
         self.assertEqual(target.read_text(encoding="utf-8"), "original")
+
+    def test_hard_links_to_protected_data_are_not_read_or_listed(self):
+        protected = self.root / "credentials.txt"
+        protected.write_text("secret material", encoding="utf-8")
+        alias = self.root / "ordinary.txt"
+        try:
+            alias.hardlink_to(protected)
+        except (OSError, NotImplementedError):
+            self.skipTest("Hard links are unavailable in this environment")
+        result = json.loads(run_tool("read_file", {"path": "ordinary.txt"}, self.root, allow_edits=False))
+        listing = json.loads(run_tool("list_files", {}, self.root, allow_edits=False))
+        self.assertIn("error", result)
+        self.assertNotIn("ordinary.txt", listing["files"])
+
+    def test_task_file_read_budget_is_enforced(self):
+        (self.root / "sample.txt").write_text("a" * 20, encoding="utf-8")
+        budget = {"file_bytes_read": 50_000_000 - 10}
+        result = json.loads(run_tool(
+            "read_file", {"path": "sample.txt"}, self.root, allow_edits=False,
+            task_budget=budget,
+        ))
+        self.assertIn("cumulative file-read limit", result["error"])
+
+    @unittest.skipUnless(workspace_fs._supports_dirfd(), "Anchored dirfd operations are POSIX-only")
+    def test_read_stays_on_open_directory_if_path_is_swapped_to_symlink(self):
+        folder = self.root / "folder"
+        outside = self.root.parent / (self.root.name + "-outside")
+        folder.mkdir()
+        outside.mkdir()
+        (folder / "data.txt").write_text("inside", encoding="utf-8")
+        (outside / "data.txt").write_text("outside", encoding="utf-8")
+        original_open = workspace_fs.os.open
+        swapped = False
+
+        def swap_after_open(path, *args, **kwargs):
+            nonlocal swapped
+            fd = original_open(path, *args, **kwargs)
+            if path == "folder" and kwargs.get("dir_fd") is not None and not swapped:
+                swapped = True
+                folder.rename(self.root / "folder-held")
+                folder.symlink_to(outside, target_is_directory=True)
+            return fd
+
+        try:
+            with patch("backend.workspace_fs.os.open", side_effect=swap_after_open):
+                result = workspace_fs.read_bytes(self.root, "folder/data.txt", 100)
+            self.assertEqual(result, b"inside")
+            self.assertTrue(swapped)
+        finally:
+            folder.unlink(missing_ok=True)
+            (self.root / "folder-held").rename(folder)
+            import shutil
+            shutil.rmtree(outside)
+
+    @unittest.skipUnless(workspace_fs._supports_dirfd(), "Anchored dirfd operations are POSIX-only")
+    def test_atomic_write_stays_on_open_directory_if_path_is_swapped_to_symlink(self):
+        folder = self.root / "folder"
+        outside = self.root.parent / (self.root.name + "-outside")
+        folder.mkdir()
+        outside.mkdir()
+        (folder / "data.txt").write_text("inside-old", encoding="utf-8")
+        (outside / "data.txt").write_text("outside-old", encoding="utf-8")
+        original_open = workspace_fs.os.open
+        swapped = False
+
+        def swap_after_open(path, *args, **kwargs):
+            nonlocal swapped
+            fd = original_open(path, *args, **kwargs)
+            if path == "folder" and kwargs.get("dir_fd") is not None and not swapped:
+                swapped = True
+                folder.rename(self.root / "folder-held")
+                folder.symlink_to(outside, target_is_directory=True)
+            return fd
+
+        try:
+            with patch("backend.workspace_fs.os.open", side_effect=swap_after_open):
+                workspace_fs.atomic_write(self.root, "folder/data.txt", b"inside-new")
+            self.assertEqual((self.root / "folder-held" / "data.txt").read_bytes(), b"inside-new")
+            self.assertEqual((outside / "data.txt").read_bytes(), b"outside-old")
+        finally:
+            folder.unlink(missing_ok=True)
+            (self.root / "folder-held").rename(folder)
+            import shutil
+            shutil.rmtree(outside)
 
     def test_edits_disabled_and_oversized_write_leave_no_file(self):
         disabled = json.loads(run_tool(

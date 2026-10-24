@@ -10,6 +10,48 @@ from backend.agent_approvals import ApprovalRegistry
 
 
 class ApprovalRegistryTests(unittest.TestCase):
+    def test_expired_approval_cannot_be_resolved(self):
+        registry = ApprovalRegistry(timeout=60)
+        emitted = threading.Event()
+        event_holder = {}
+        worker = threading.Thread(target=lambda: registry.request(
+            "a" * 32, {}, lambda event: (event_holder.update(event), emitted.set())
+        ))
+        worker.start()
+        self.assertTrue(emitted.wait(1))
+        approval_id = event_holder["approval_id"]
+        with registry._lock:
+            registry._pending[approval_id].created_at -= 61
+        self.assertFalse(registry.resolve(approval_id, "a" * 32, True))
+        worker.join(1)
+        self.assertFalse(worker.is_alive())
+
+    def test_simultaneous_approval_and_rejection_have_one_winner(self):
+        registry = ApprovalRegistry(timeout=2)
+        emitted = threading.Event()
+        event_holder = {}
+        worker = threading.Thread(target=lambda: registry.request(
+            "a" * 32, {}, lambda event: (event_holder.update(event), emitted.set())
+        ))
+        worker.start()
+        self.assertTrue(emitted.wait(1))
+        barrier = threading.Barrier(3)
+        results = []
+
+        def decide(value):
+            barrier.wait()
+            results.append(registry.resolve(event_holder["approval_id"], "a" * 32, value))
+
+        deciders = [threading.Thread(target=decide, args=(decision,)) for decision in (True, False)]
+        for thread in deciders:
+            thread.start()
+        barrier.wait()
+        for thread in deciders:
+            thread.join(1)
+        worker.join(1)
+        self.assertEqual(sum(results), 1)
+        self.assertFalse(worker.is_alive())
+
     def test_resolution_is_session_scoped_and_one_shot(self):
         registry = ApprovalRegistry(timeout=2)
         emitted = threading.Event()

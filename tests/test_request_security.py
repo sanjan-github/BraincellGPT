@@ -4,7 +4,6 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from http.server import ThreadingHTTPServer
 from unittest.mock import MagicMock, patch
 
 import app
@@ -15,7 +14,7 @@ from backend import mcp_oauth
 
 class RequestSecurityIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
+        self.server = app.BoundedThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
         self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.server_thread.start()
 
@@ -36,6 +35,9 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
 
             def is_trusted_local_request(self):
                 return app.Handler.is_trusted_local_request(self)
+
+            def require_authorization(self):
+                return True
 
             def send_json(self, status, body):
                 self.response = (status, body)
@@ -65,7 +67,7 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
         import base64
 
         connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
-        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode("ascii")
+        image = "data:image/png;base64," + base64.b64encode(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==")).decode("ascii")
         provider_response = MagicMock()
         provider_response.read.return_value = b'{"choices":[{"message":{"content":"An image."}}]}'
         provider_response.__enter__.return_value = provider_response
@@ -238,7 +240,7 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
                 body = json.dumps({"task": "create a note", "provider": "groq", "profile_id": "test-profile", "allow_edits": True})
                 with patch("app.PORT", self.server.server_port), patch("app.ROOT", root), \
                      patch("app.get_agent_store", return_value=store), patch("backend.agent.get_agent_store", return_value=store), \
-                     patch.dict(app._profile_secrets, {"test-profile": "test-key"}), \
+                     patch("app._get_profile_secret", return_value="test-key"), \
                      patch("backend.agent.open_provider_request", side_effect=[tool_response, final_response]):
                     connection.request("POST", "/api/agent", body=body, headers={"Content-Type": "application/json"})
                     response = connection.getresponse()
@@ -261,6 +263,39 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
                     redo_response = connection.getresponse()
                     self.assertEqual(redo_response.status, 200)
                     self.assertEqual((root / "note.txt").read_text(encoding="utf-8"), "created by the agent")
+        finally:
+            connection.close()
+
+    def test_foreign_workspace_session_cannot_read_approve_or_restore(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                store = AgentStore(Path(directory) / "agent.sqlite3")
+                foreign_id = store.create_session(
+                    str(Path(directory, "other-workspace").resolve()), "groq", "", "model", "code", "foreign",
+                )
+                with patch("app.PORT", self.server.server_port), patch("app.get_agent_store", return_value=store):
+                    connection.request("GET", "/api/agent/sessions?id=" + foreign_id)
+                    read_response = connection.getresponse()
+                    self.assertEqual(read_response.status, 404)
+                    read_response.read()
+
+                    connection.request(
+                        "POST", "/api/agent/approvals",
+                        body=json.dumps({"approval_id": "x" * 32, "session_id": foreign_id, "decision": "approve"}),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    approval_response = connection.getresponse()
+                    self.assertEqual(approval_response.status, 404)
+                    approval_response.read()
+
+                    connection.request(
+                        "POST", "/api/agent/restore",
+                        body=json.dumps({"session_id": foreign_id, "checkpoint_id": "a" * 32, "allow_edits": True}),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    restore_response = connection.getresponse()
+                    self.assertEqual(restore_response.status, 400)
         finally:
             connection.close()
 

@@ -13,18 +13,29 @@ and extension-host APIs are outside this backend port.
 - OpenAI-compatible tool calls and Anthropic's native Messages tool protocol.
 - Google Gemini through its OpenAI-compatible endpoint for chat, coding-agent
   tool calls, and image input.
+- Azure OpenAI v1 chat completions with deployment selection, the `api-key`
+  authentication header, and the shared pinned-public-IP transport.
 - One shared provider registry for chat and agent model defaults, including
   OpenRouter in the coding-agent path.
 - Bounded list, read, and literal-search tools that omit protected paths.
+- Workspace filtering for symlinks, sensitive paths, and multiply linked files,
+  with bounded file reads and aggregate per-task scan and byte budgets.
 - Atomic file writes, exact-match search/replace, non-mutating unified diff
   previews, and guarded text diffs.
-- Streaming approval queue for each edit and command call, alongside backward-
-  compatible request-level edit and command flags. Commands have timeouts and
-  bounded captured output.
+- Streaming approval queue for each edit and command call, bound to the owning
+  session and expiring after three minutes. Request-level edit and command flags
+  remain explicit capabilities for non-streaming callers.
+- Workspace commands have process-tree timeout handling, a four-command
+  concurrency cap, bounded output, and a filtered environment that omits
+  provider credentials. Windows commands run in Job Objects with kill-on-close
+  and an active-process cap; POSIX commands use isolated process groups.
 - Follow-up questions, completion, todo updates, mode switching, and bounded
   sequential subtasks.
 - Bounded accumulated tool context and repeat-call protection for identical
   mutating operations.
+- Shared per-task limits of five minutes, 32 tool calls, 200,000 tool-output
+  characters, 10,000 scanned files, and 50 MB of file reads, including nested
+  subtasks.
 - Validated provider tool-call IDs, function names, argument sizes, and batch
   limits before executing any tool in a response.
 - Model-assisted semantic compaction of older agent context, preserving the
@@ -45,19 +56,43 @@ and extension-host APIs are outside this backend port.
   there is no plaintext fallback.
 - Reversible file-edit checkpoints and explicit restore/redo operations.
 - Per-agent-run grouped checkpoint history with multi-file restore and redo groups.
+- Group restore validates targets before changes, serializes restores per
+  session, snapshots the current state, and rolls back on a failed write.
 - OpenAI-compatible and Anthropic server-sent event parsing, incremental text
   deltas, tool progress, and a local-only streaming agent endpoint.
+- Provider capability metadata is exposed by `/health`; model and deployment
+  support is explicitly reported as model-dependent.
 - Provider transport limits, shared concurrency control, no redirects, and
   pinned public-IP connections for custom provider URLs.
 - Bounded inline image input for chat and agent APIs, converted to native
   OpenAI-compatible or Anthropic image blocks; session history stores text only.
+- Image header validation includes PNG chunk CRCs and bounded dimensions, with
+  limits of 8,192 pixels per side and 40 megapixels per image.
+- Bounded profile-key storage: 128 profiles, 24-hour expiry, process-memory only.
+- HTTP request read timeouts, a 64-handler cap, and a four-task agent cap.
+- Remote binding is opt-in and requires a strong shared authentication token,
+  a configured HTTPS origin, and a loopback TLS reverse proxy.
 - HTTP acceptance coverage for OAuth callback, task persistence, streamed tool
   approval, and API-level rollback/redo.
 
 ## Remaining backend work
 
-1. Broaden credential-store validation across supported desktop platforms.
-2. Expand provider adapters and model capability metadata.
+1. Complete Windows directory-entry race protection for writes. POSIX reads,
+   writes, and deletes use directory handles with no-follow opens. Windows
+   reads verify the opened file handle, while writes still use a verified
+   temporary-file handle followed by path-based atomic replacement.
+2. Evaluate restricted-token execution and stronger OS-level command
+   sandboxes beyond Windows Job Object process-tree containment and POSIX
+   process-group termination.
+3. Run the native Windows, macOS, and Linux CI matrix; native credential-store
+   checks and clean-install/shutdown smoke tests are configured there but this
+   workstation can only provide Windows execution evidence.
+4. Configure credentials and endpoints to run opt-in provider, MCP, and OAuth
+   integration tests against real services. These tests skip when secrets are
+   absent; OAuth checks live discovery and PKCE metadata rather than completing
+   an interactive authorization-code exchange.
+5. Add per-user identity, authorization, and data partitioning before using the
+   shared-token remote mode for a multi-user deployment.
 
 ## Current API extension
 
@@ -88,9 +123,10 @@ minutes.
 
 Both `POST /api/chat` and agent endpoints optionally accept `images`, an array
 of up to four PNG, JPEG, GIF, or WebP base64 data URLs. Each decoded image is
-limited to 3 MB and the combined decoded image data to 8 MB. Provider/model
-image support depends on the selected endpoint; text-only requests keep the
-existing payload format.
+limited to 3 MB and the combined decoded image data to 8 MB. Images are checked
+for format structure and dimensions before forwarding. Provider/model image
+support depends on the selected endpoint; text-only requests keep the existing
+payload format.
 
 Configure up to eight local or remote MCP servers in the
 `BRAINCELLGPT_MCP_SERVERS` environment variable as a JSON list. A local entry

@@ -11,7 +11,58 @@ from unittest.mock import MagicMock, patch
 import app
 
 
+class ProfileSecretLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        with app._profile_secrets_lock:
+            app._profile_secrets.clear()
+
+    def tearDown(self):
+        with app._profile_secrets_lock:
+            app._profile_secrets.clear()
+
+    def test_secret_storage_is_bounded_and_evicts_least_recently_used(self):
+        with patch("app.MAX_PROFILE_SECRETS", 2):
+            app._set_profile_secret("profile-a", "key-a")
+            app._set_profile_secret("profile-b", "key-b")
+            self.assertEqual(app._get_profile_secret("profile-a"), "key-a")
+            app._set_profile_secret("profile-c", "key-c")
+        self.assertEqual(app._get_profile_secret("profile-a"), "key-a")
+        self.assertEqual(app._get_profile_secret("profile-b"), "")
+        self.assertEqual(app._get_profile_secret("profile-c"), "key-c")
+
+    def test_secret_storage_expires_and_deletion_clears_a_profile(self):
+        app._set_profile_secret("profile-a", "key-a")
+        with patch("app.PROFILE_SECRET_TTL_SECONDS", 0):
+            self.assertEqual(app._get_profile_secret("profile-a"), "")
+        app._set_profile_secret("profile-b", "key-b")
+        app._set_profile_secret("profile-b", "")
+        self.assertEqual(app._get_profile_secret("profile-b"), "")
+
+
 class ProviderConfigurationTests(unittest.TestCase):
+    def test_azure_openai_v1_uses_deployment_name_and_api_key_header(self):
+        response = MagicMock()
+        response.read.return_value = b'{"choices":[{"message":{"content":"azure reply"}}]}'
+        response.__enter__.return_value = response
+        response.__enter__.return_value = response
+        with patch("app.resolve_public_addresses", return_value=(("ipv4",),)), \
+             patch("app.open_provider_request", return_value=response) as opener:
+            reply = app.generate_reply(
+                "hello", [], "normal", provider="azure_openai", user_api_key="azure-secret",
+                base_url="https://resource.openai.azure.com/openai/v1", model_override="deployment-a",
+            )
+        self.assertEqual(reply, "azure reply")
+        request = opener.call_args.args[0]
+        self.assertEqual(request.full_url, "https://resource.openai.azure.com/openai/v1/chat/completions")
+        self.assertEqual(request.get_header("Api-key"), "azure-secret")
+        self.assertIsNone(request.get_header("Authorization"))
+
+    def test_provider_capabilities_are_model_aware_and_report_azure_protocol(self):
+        capabilities = app.provider_capabilities()
+        self.assertEqual(capabilities["azure_openai"]["api_style"], "azure-openai-v1")
+        self.assertEqual(capabilities["azure_openai"]["model_support"], "deployment-dependent")
+        self.assertEqual(capabilities["anthropic"]["image_payload"], "anthropic")
+
     def test_cloud_provider_registry_has_required_fields(self):
         self.assertIn("groq", app.OPENAI_COMPATIBLE_PROVIDERS)
         self.assertIn("deepseek", app.OPENAI_COMPATIBLE_PROVIDERS)
@@ -122,7 +173,7 @@ class ApiReliabilityTests(unittest.TestCase):
         response = MagicMock()
         response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
         response.__enter__.return_value = response
-        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode()
+        image = "data:image/png;base64," + base64.b64encode(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==")).decode()
         with patch("app.open_provider_request", return_value=response) as opener:
             app.generate_reply("describe", [], "normal", provider="groq", user_api_key="secret-key", images=[image])
         payload = json.loads(opener.call_args.args[0].data.decode("utf-8"))
@@ -251,7 +302,7 @@ class ModelCompatibilityTests(unittest.TestCase):
         response = MagicMock()
         response.read.return_value = b'{"content":[{"type":"text","text":"reply"}]}'
         response.__enter__.return_value = response
-        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode()
+        image = "data:image/png;base64," + base64.b64encode(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==")).decode()
         with patch("app.open_provider_request", return_value=response) as opener:
             app.generate_reply("describe", [], "normal", provider="anthropic", user_api_key="secret-key", images=[image])
         payload = json.loads(opener.call_args.args[0].data.decode("utf-8"))
@@ -332,6 +383,31 @@ class LocalRequestBoundaryTests(unittest.TestCase):
 
     def test_rejects_malformed_host(self):
         self.assertFalse(self.make_handler(host="localhost:not-a-port").is_trusted_local_request())
+
+    def test_remote_auth_accepts_bearer_or_browser_basic_and_rejects_wrong_tokens(self):
+        import base64
+
+        token = "t" * 48
+        with patch("app.REMOTE_ACCESS_ENABLED", True), patch("app.HOST", "0.0.0.0"), patch("app.REMOTE_AUTH_TOKEN", token):
+            bearer = self.make_handler()
+            bearer.headers["Authorization"] = "Bearer " + token
+            self.assertTrue(bearer.is_authorized_request())
+
+            basic = self.make_handler()
+            basic.headers["Authorization"] = "Basic " + base64.b64encode(("braincell:" + token).encode()).decode()
+            self.assertTrue(basic.is_authorized_request())
+
+            rejected = self.make_handler()
+            rejected.headers["Authorization"] = "Bearer " + "x" * 48
+            self.assertFalse(rejected.is_authorized_request())
+
+    def test_remote_origin_is_restricted_to_the_configured_https_host(self):
+        with patch("app.REMOTE_ACCESS_ENABLED", True), patch("app.ALLOWED_HOSTS", {"chat.example"}), \
+             patch("app.PUBLIC_ORIGIN", "https://chat.example"), patch("app.PUBLIC_ORIGIN_PORT", 443):
+            trusted = self.make_handler(host="chat.example", origin="https://chat.example")
+            self.assertTrue(trusted.is_trusted_local_request())
+            untrusted = self.make_handler(host="chat.example", origin="https://other.example")
+            self.assertFalse(untrusted.is_trusted_local_request())
 
     def test_chat_and_agent_share_one_provider_concurrency_limiter(self):
         from backend import agent, provider_http

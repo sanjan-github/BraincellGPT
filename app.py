@@ -6,14 +6,17 @@ Set GROQ_API_KEY in the environment or in a local .env file.
 from __future__ import annotations
 
 import json
+import base64
+import hmac
+import ipaddress
 import os
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse, urlsplit
-from collections import defaultdict, deque
-from threading import Lock
+from collections import OrderedDict, defaultdict, deque
+from threading import BoundedSemaphore, Lock
 import time
 import re
 from typing import Any
@@ -24,7 +27,7 @@ from backend.mcp_oauth import complete_callback as complete_mcp_oauth_callback, 
 from backend.agent_state import get_agent_store
 from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 from backend.media import anthropic_content, normalize_images, openai_content
-from backend.provider_registry import OPENAI_COMPATIBLE_PROVIDERS
+from backend.provider_registry import AZURE_OPENAI_PROVIDER, OPENAI_COMPATIBLE_PROVIDERS, provider_capabilities
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
@@ -36,12 +39,18 @@ MAX_HISTORY_CHARS = 24000
 MAX_HISTORY_ITEM_CHARS = 6000
 _rate_events: dict[str, deque[float]] = defaultdict(deque)
 _rate_lock = Lock()
-_profile_secrets: dict[str, str] = {}
+_profile_secrets: OrderedDict[str, tuple[str, float]] = OrderedDict()
 _profile_secrets_lock = Lock()
+MAX_PROFILE_SECRETS = 128
+PROFILE_SECRET_TTL_SECONDS = 24 * 60 * 60
+MAX_CONCURRENT_AGENT_TASKS = 4
+MAX_HTTP_HANDLERS = 64
+_agent_task_slots = BoundedSemaphore(MAX_CONCURRENT_AGENT_TASKS)
+HTTP_READ_TIMEOUT_SECONDS = 10
 MAX_RATE_BUCKETS = 2048
 MAX_PROVIDER_RESPONSE_BYTES = SHARED_MAX_PROVIDER_RESPONSE_BYTES
 _provider_slots = PROVIDER_SLOTS
-SUPPORTED_PROVIDER_NAMES = tuple(OPENAI_COMPATIBLE_PROVIDERS) + ("anthropic", "ollama", "lmstudio", "custom")
+SUPPORTED_PROVIDER_NAMES = tuple(OPENAI_COMPATIBLE_PROVIDERS) + ("azure_openai", "anthropic", "ollama", "lmstudio", "custom")
 
 
 def rate_limited(client_ip: str) -> bool:
@@ -61,6 +70,36 @@ def rate_limited(client_ip: str) -> bool:
             return True
         events.append(now)
         return False
+
+
+def _get_profile_secret(profile_id: str) -> str:
+    now = time.monotonic()
+    with _profile_secrets_lock:
+        expired = [key for key, (_secret, stored_at) in _profile_secrets.items()
+                   if now - stored_at >= PROFILE_SECRET_TTL_SECONDS]
+        for key in expired:
+            _profile_secrets.pop(key, None)
+        entry = _profile_secrets.get(profile_id)
+        if entry is None:
+            return ""
+        _profile_secrets.move_to_end(profile_id)
+        return entry[0]
+
+
+def _set_profile_secret(profile_id: str, api_key: str) -> None:
+    now = time.monotonic()
+    with _profile_secrets_lock:
+        expired = [key for key, (_secret, stored_at) in _profile_secrets.items()
+                   if now - stored_at >= PROFILE_SECRET_TTL_SECONDS]
+        for key in expired:
+            _profile_secrets.pop(key, None)
+        if not api_key:
+            _profile_secrets.pop(profile_id, None)
+            return
+        _profile_secrets.pop(profile_id, None)
+        _profile_secrets[profile_id] = (api_key, now)
+        while len(_profile_secrets) > MAX_PROFILE_SECRETS:
+            _profile_secrets.popitem(last=False)
 
 
 def trim_history(history: list[dict], max_items: int = MAX_HISTORY_MESSAGES, max_chars: int = MAX_HISTORY_CHARS, max_item_chars: int = MAX_HISTORY_ITEM_CHARS) -> list[dict]:
@@ -136,6 +175,36 @@ def load_dotenv() -> None:
 
 
 load_dotenv()
+HOST = os.environ.get("BRAINCELLGPT_HOST", "127.0.0.1").strip() or "127.0.0.1"
+REMOTE_ACCESS_ENABLED = os.environ.get("BRAINCELLGPT_ALLOW_REMOTE", "").strip() == "1"
+REMOTE_AUTH_TOKEN = os.environ.get("BRAINCELLGPT_REMOTE_AUTH_TOKEN", "")
+ALLOWED_HOSTS = {value.strip().lower() for value in os.environ.get("BRAINCELLGPT_ALLOWED_HOSTS", "").split(",") if value.strip()}
+PUBLIC_ORIGIN = os.environ.get("BRAINCELLGPT_PUBLIC_ORIGIN", "").rstrip("/")
+PUBLIC_ORIGIN_PORT = None
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+if not _is_loopback_host(HOST):
+    if not REMOTE_ACCESS_ENABLED:
+        raise RuntimeError("Remote binding is disabled. Set BRAINCELLGPT_ALLOW_REMOTE=1 to opt in.")
+    if len(REMOTE_AUTH_TOKEN) < 32:
+        raise RuntimeError("Remote binding requires BRAINCELLGPT_REMOTE_AUTH_TOKEN with at least 32 characters.")
+    if not PUBLIC_ORIGIN.startswith("https://"):
+        raise RuntimeError("Remote binding requires BRAINCELLGPT_PUBLIC_ORIGIN to be an HTTPS origin behind a TLS proxy.")
+    allowed_origin = urlsplit(PUBLIC_ORIGIN)
+    if not allowed_origin.hostname or allowed_origin.username or allowed_origin.password or allowed_origin.path not in ("", "/") or allowed_origin.query or allowed_origin.fragment:
+        raise RuntimeError("BRAINCELLGPT_PUBLIC_ORIGIN must be a bare HTTPS origin without credentials, path, query, or fragment.")
+    ALLOWED_HOSTS.add(allowed_origin.hostname.lower())
+    PUBLIC_ORIGIN_PORT = allowed_origin.port or 443
+
 # Resolve PORT after dotenv so a PORT entry in .env is respected.
 try:
     PORT = int(os.environ.get("PORT", "8000"))
@@ -239,6 +308,19 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         protocol = "openai"
         label = "Ollama"
         api_key = api_key or ""
+    elif provider == "azure_openai":
+        api_key = api_key or os.environ.get(AZURE_OPENAI_PROVIDER["env_key"], "").strip()
+        base_url = base_url.strip() or os.environ.get(AZURE_OPENAI_PROVIDER["env_endpoint"], "").strip()
+        if not base_url:
+            raise RuntimeError("Enter an Azure OpenAI v1 endpoint, or set AZURE_OPENAI_ENDPOINT in .env.")
+        endpoint, pinned_addresses = validate_provider_url_with_addresses("custom", base_url)
+        if not endpoint.endswith("/chat/completions"):
+            endpoint += "/chat/completions"
+        model = model or os.environ.get(AZURE_OPENAI_PROVIDER["env_model"], "").strip()
+        if not model:
+            raise RuntimeError("Enter an Azure deployment name, or set AZURE_OPENAI_DEPLOYMENT in .env.")
+        protocol = "azure-openai"
+        label = AZURE_OPENAI_PROVIDER["label"]
     elif provider == "custom":
         # Custom API settings may be supplied by the UI or kept privately in .env.
         base_url = base_url.strip() or os.environ.get("CUSTOM_API_BASE_URL", "").strip()
@@ -269,6 +351,8 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
             env_name = "ANTHROPIC_API_KEY"
         elif provider == "custom":
             env_name = "CUSTOM_API_KEY"
+        elif provider == "azure_openai":
+            env_name = AZURE_OPENAI_PROVIDER["env_key"]
         if env_name:
             raise RuntimeError(
                 "No API key is configured for " + label + ". The key field is optional, but .env must contain "
@@ -292,6 +376,9 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         headers["Authorization"] = "Bearer " + api_key if api_key else ""
         if not api_key:
             headers.pop("Authorization", None)
+        if protocol == "azure-openai":
+            headers.pop("Authorization", None)
+            headers["api-key"] = api_key
         payload = {"model": model, "messages": messages, "temperature": 0.7, "max_tokens": 1200}
     request = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
     try:
@@ -353,12 +440,22 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
 class Handler(BaseHTTPRequestHandler):
     server_version = "BrainCellGPT/0.1"
 
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(HTTP_READ_TIMEOUT_SECONDS)
+
     def is_trusted_local_request(self, allow_cross_site_redirect: bool = False) -> bool:
         """Reject non-loopback hosts and cross-origin browser requests."""
         host = self.headers.get("Host", "")
         try:
             parsed_host = urlsplit("http://" + host)
-            if parsed_host.hostname not in ("localhost", "127.0.0.1", "::1") or parsed_host.port != PORT:
+            hostname = (parsed_host.hostname or "").lower()
+            local_host = _is_loopback_host(hostname)
+            if local_host:
+                valid_host = parsed_host.port == PORT
+            else:
+                valid_host = REMOTE_ACCESS_ENABLED and hostname in ALLOWED_HOSTS and (parsed_host.port or 443) == PUBLIC_ORIGIN_PORT
+            if not valid_host:
                 return False
         except ValueError:
             return False
@@ -366,7 +463,16 @@ class Handler(BaseHTTPRequestHandler):
         if origin:
             try:
                 parsed_origin = urlsplit(origin)
-                if parsed_origin.scheme != "http" or parsed_origin.hostname not in ("localhost", "127.0.0.1", "::1") or parsed_origin.port != PORT:
+                origin_host = (parsed_origin.hostname or "").lower()
+                if _is_loopback_host(origin_host):
+                    valid_origin = parsed_origin.scheme == "http" and parsed_origin.port == PORT
+                else:
+                    valid_origin = (
+                        REMOTE_ACCESS_ENABLED and origin.rstrip("/") == PUBLIC_ORIGIN
+                        and parsed_origin.scheme == "https" and origin_host in ALLOWED_HOSTS
+                        and (parsed_origin.port or 443) == PUBLIC_ORIGIN_PORT
+                    )
+                if not valid_origin:
                     return False
             except ValueError:
                 return False
@@ -376,6 +482,37 @@ class Handler(BaseHTTPRequestHandler):
             if not origin:
                 return False
         return True
+
+    def is_authorized_request(self) -> bool:
+        if not REMOTE_ACCESS_ENABLED or _is_loopback_host(HOST):
+            return True
+        authorization = self.headers.get("Authorization", "")
+        if len(authorization) > 8192:
+            return False
+        supplied = ""
+        if authorization.startswith("Bearer "):
+            supplied = authorization[7:]
+        elif authorization.startswith("Basic "):
+            try:
+                username, supplied = base64.b64decode(authorization[6:], validate=True).decode("utf-8").split(":", 1)
+                if username != "braincell":
+                    return False
+            except (ValueError, UnicodeDecodeError):
+                return False
+        return hmac.compare_digest(supplied.encode("utf-8"), REMOTE_AUTH_TOKEN.encode("utf-8"))
+
+    def require_authorization(self) -> bool:
+        if self.is_authorized_request():
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="BrainCellGPT", charset="UTF-8"')
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        body = json.dumps({"error": "Authentication is required."}).encode("utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return False
 
     def end_headers(self) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -400,6 +537,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def do_GET(self) -> None:
+        if not self.require_authorization():
+            return
         path = urlparse(self.path).path
         content_type = "text/html; charset=utf-8"
         if path in ("/", "/index.html"):
@@ -414,7 +553,7 @@ class Handler(BaseHTTPRequestHandler):
             file_path = WEB_DIR / "assets" / "earth-blue-marble.jpg"
             content_type = "image/jpeg"
         elif path == "/health":
-            self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": list(SUPPORTED_PROVIDER_NAMES)})
+            self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": list(SUPPORTED_PROVIDER_NAMES), "provider_capabilities": provider_capabilities()})
             return
         elif path == "/api/mcp/oauth/callback":
             if self.client_address[0] not in ("127.0.0.1", "::1") or not self.is_trusted_local_request(allow_cross_site_redirect=True):
@@ -450,8 +589,7 @@ class Handler(BaseHTTPRequestHandler):
             if not re.fullmatch(r"[a-zA-Z0-9_-]{8,80}", profile_id):
                 self.send_json(400, {"error": "Invalid profile ID."})
                 return
-            with _profile_secrets_lock:
-                configured = bool(_profile_secrets.get(profile_id))
+            configured = bool(_get_profile_secret(profile_id))
             self.send_json(200, {"configured": configured})
             return
         elif path == "/api/agent/sessions":
@@ -505,11 +643,7 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(api_key, str) or len(api_key) > 500:
             self.send_json(400, {"error": "API key is too long or invalid."})
             return
-        with _profile_secrets_lock:
-            if api_key.strip():
-                _profile_secrets[profile_id] = api_key.strip()
-            else:
-                _profile_secrets.pop(profile_id, None)
+        _set_profile_secret(profile_id, api_key.strip())
         self.send_json(200, {"ok": True, "configured": bool(api_key.strip())})
 
     def _handle_mcp_disconnect_post(self, payload: dict) -> None:
@@ -565,6 +699,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, result)
 
     def _handle_agent_post(self, route: str, payload: dict) -> None:
+        if not _agent_task_slots.acquire(timeout=2):
+            self.send_json(503, {"error": "The agent is busy with other tasks. Try again shortly."})
+            return
+        try:
+            self._handle_agent_post_inner(route, payload)
+        finally:
+            _agent_task_slots.release()
+
+    def _handle_agent_post_inner(self, route: str, payload: dict) -> None:
         environ = dict(os.environ)
         task = payload.get("task", "")
         if not isinstance(task, str) or not task.strip() or len(task) > 12000:
@@ -581,8 +724,7 @@ class Handler(BaseHTTPRequestHandler):
         mode = payload.get("mode", "") if isinstance(payload.get("mode", ""), str) else ""
         supplied_session_id = payload.get("session_id", "")
         profile_id = payload.get("profile_id", "")
-        with _profile_secrets_lock:
-            saved_key = _profile_secrets.get(profile_id, "") if isinstance(profile_id, str) else ""
+        saved_key = _get_profile_secret(profile_id) if isinstance(profile_id, str) else ""
         store = get_agent_store()
         if supplied_session_id:
             session_id = store.validate_session_id(supplied_session_id)
@@ -650,6 +792,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def do_POST(self) -> None:
+        if not self.require_authorization():
+            return
         route = urlparse(self.path).path
         if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/agent", "/api/agent/stream", "/api/agent/approvals", "/api/agent/restore", "/api/mcp/oauth/disconnect"):
             self.send_json(404, {"error": "Not found"})
@@ -707,8 +851,7 @@ class Handler(BaseHTTPRequestHandler):
                 value = payload.get(name, default)
                 return value if isinstance(value, str) else default
             profile_id = text_field("profile_id")
-            with _profile_secrets_lock:
-                saved_key = _profile_secrets.get(profile_id, "")
+            saved_key = _get_profile_secret(profile_id)
             # An explicitly entered key is used only for the connection check; normal
             # chat requests resolve their credential from process memory or .env.
             supplied_key = text_field("api_key") if route == "/api/test-connection" else ""
@@ -745,6 +888,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(500, {"error": "Unexpected server error. Check the terminal for details."})
 
     def do_DELETE(self) -> None:
+        if not self.require_authorization():
+            return
         route = urlparse(self.path).path
         if route != "/api/agent/sessions":
             self.send_json(404, {"error": "Not found"})
@@ -773,10 +918,36 @@ class Handler(BaseHTTPRequestHandler):
         print(f"[BrainCellGPT] {self.address_string()} - {format % args}")
 
 
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    request_queue_size = MAX_HTTP_HANDLERS
+    daemon_threads = True
+    block_on_close = False
+
+    def __init__(self, *args, **kwargs):
+        self._handler_slots = BoundedSemaphore(MAX_HTTP_HANDLERS)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        if not self._handler_slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._handler_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._handler_slots.release()
+
+
 def main() -> None:
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    server = BoundedThreadingHTTPServer((HOST, PORT), Handler)
     print("\nBrainCellGPT is running.")
-    print(f"Open http://localhost:{PORT} in your browser.")
+    print(f"Open {PUBLIC_ORIGIN if REMOTE_ACCESS_ENABLED and not _is_loopback_host(HOST) else f'http://localhost:{PORT}'} in your browser.")
     print(f"Health check: http://localhost:{PORT}/health")
     print("Model provider: Groq")
     print("Press Ctrl+C to stop.\n")

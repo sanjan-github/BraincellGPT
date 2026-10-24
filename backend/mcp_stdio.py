@@ -304,6 +304,80 @@ def _schema_is_bounded(schema: dict, max_depth: int = 40) -> bool:
     return True
 
 
+def _validate_tool_arguments(schema: dict, arguments: dict) -> None:
+    """Validate MCP arguments against the bounded JSON Schema subset we expose."""
+    try:
+        encoded_size = len(json.dumps(arguments, ensure_ascii=False).encode("utf-8"))
+    except (TypeError, ValueError, RecursionError, UnicodeError) as exc:
+        raise ValueError("MCP tool arguments are not valid bounded JSON.") from exc
+    if encoded_size > MAX_TOOL_SCHEMA_BYTES:
+        raise ValueError("MCP tool arguments exceed the size limit.")
+
+    def check(value, rule, depth=0):
+        if depth > 40 or not isinstance(rule, dict):
+            raise ValueError("MCP tool schema is invalid or too deeply nested.")
+        expected = rule.get("type")
+        valid_types = {"object", "array", "string", "integer", "number", "boolean", "null"}
+        if expected is not None and (not isinstance(expected, str) or expected not in valid_types):
+            raise ValueError("MCP tool schema uses an unsupported argument type.")
+        matches = {
+            "object": isinstance(value, dict),
+            "array": isinstance(value, list),
+            "string": isinstance(value, str),
+            "integer": type(value) is int,
+            "number": type(value) in (int, float) and type(value) is not bool,
+            "boolean": type(value) is bool,
+            "null": value is None,
+        }
+        if expected and not matches[expected]:
+            raise ValueError("MCP tool arguments do not match the server's declared schema.")
+        if "enum" in rule and (not isinstance(rule["enum"], list) or value not in rule["enum"]):
+            raise ValueError("MCP tool argument is not an allowed value.")
+        if isinstance(value, dict):
+            properties = rule.get("properties", {})
+            required = rule.get("required", [])
+            if not isinstance(properties, dict) or not isinstance(required, list) or any(not isinstance(key, str) for key in required):
+                raise ValueError("MCP tool schema has invalid object properties.")
+            if any(key not in value for key in required):
+                raise ValueError("MCP tool arguments are missing a required field.")
+            additional = rule.get("additionalProperties", True)
+            for key, child in value.items():
+                child_rule = properties.get(key)
+                if child_rule is None:
+                    if additional is False:
+                        raise ValueError("MCP tool arguments include an unsupported field.")
+                    if isinstance(additional, dict):
+                        check(child, additional, depth + 1)
+                else:
+                    check(child, child_rule, depth + 1)
+        if isinstance(value, list):
+            max_items = rule.get("maxItems", 1000)
+            if type(max_items) is not int or max_items < 0:
+                raise ValueError("MCP tool schema has an invalid array size limit.")
+            if len(value) > max_items:
+                raise ValueError("MCP tool argument array exceeds its size limit.")
+            item_rule = rule.get("items")
+            if isinstance(item_rule, dict):
+                for child in value:
+                    check(child, item_rule, depth + 1)
+        if isinstance(value, str):
+            max_length = rule.get("maxLength", MAX_TOOL_SCHEMA_BYTES)
+            if type(max_length) is not int or max_length < 0:
+                raise ValueError("MCP tool schema has an invalid string size limit.")
+            if len(value) > max_length:
+                raise ValueError("MCP tool argument string exceeds its size limit.")
+        if type(value) in (int, float):
+            for keyword, comparison in (("minimum", lambda left, right: left < right), ("maximum", lambda left, right: left > right)):
+                bound = rule.get(keyword)
+                if bound is not None:
+                    if type(bound) not in (int, float):
+                        raise ValueError("MCP tool schema has an invalid numeric bound.")
+                    if comparison(value, bound):
+                        raise ValueError("MCP tool argument is outside its allowed range.")
+
+    check(arguments, schema)
+
+
 def _strip_mcp_header_annotations(value: Any) -> Any:
     if isinstance(value, dict):
         return {
@@ -1063,8 +1137,12 @@ class MCPToolRouter:
                         text_parts.append(item["text"])
             return {"uri": uri, "text": "\n".join(text_parts)[:MAX_CALL_RESULT_BYTES]}
         if isinstance(client, _StreamableHTTPClient):
+            if route.input_schema is not None:
+                _validate_tool_arguments(route.input_schema, arguments)
             result = client.call_tool(route.name, arguments, route.input_schema)
         else:
+            if route.input_schema is not None:
+                _validate_tool_arguments(route.input_schema, arguments)
             result = client.call_tool(route.name, arguments)
         return normalize_call_result(result)
 

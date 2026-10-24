@@ -107,6 +107,35 @@ class AgentCheckpointTests(unittest.TestCase):
         self.assertEqual(set(restored["restored"]), {"first.txt", "second.txt"})
         self.assertTrue(restored["redo_group_id"])
 
+    def test_group_restore_rolls_back_workspace_when_later_write_fails(self):
+        first = self.root / "first.txt"
+        second = self.root / "second.txt"
+        first.write_text("first before\n", encoding="utf-8")
+        second.write_text("second before\n", encoding="utf-8")
+        group_id = "b" * 32
+        with patch("backend.agent.get_agent_store", return_value=self.store):
+            for path, content in (("first.txt", "first changed\n"), ("second.txt", "second changed\n")):
+                run_tool("write_file", {"path": path, "content": content}, self.root, True,
+                         session_id=self.session_id, checkpoint_group_id=group_id)
+            baseline_count = len(self.store.list_checkpoints(self.session_id))
+            original_write = __import__("backend.agent", fromlist=["_write_text_atomically"])._write_text_atomically
+            write_count = 0
+
+            def fail_second_restore(path, content, root=None):
+                nonlocal write_count
+                write_count += 1
+                if write_count == 2:
+                    raise OSError("injected restore failure")
+                return original_write(path, content, root)
+
+            with patch("backend.agent._write_text_atomically", side_effect=fail_second_restore):
+                with self.assertRaisesRegex(OSError, "injected restore failure"):
+                    restore_checkpoint_group(self.session_id, group_id, self.root)
+
+        self.assertEqual(first.read_text(encoding="utf-8"), "first changed\n")
+        self.assertEqual(second.read_text(encoding="utf-8"), "second changed\n")
+        self.assertEqual(len(self.store.list_checkpoints(self.session_id)), baseline_count)
+
 
 if __name__ == "__main__":
     unittest.main()

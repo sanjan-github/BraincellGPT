@@ -1,6 +1,7 @@
 import email.message
 import io
 import json
+import sys
 import tempfile
 import unittest
 import urllib.error
@@ -26,7 +27,7 @@ class AgentModeTests(unittest.TestCase):
         response = MagicMock()
         response.read.return_value = b'{"choices":[{"message":{"content":"Answer"}}]}'
         response.__enter__.return_value = response
-        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode()
+        image = "data:image/png;base64," + base64.b64encode(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==")).decode()
         with patch("backend.agent.open_provider_request", return_value=response) as opener:
             run_agent("describe", [], Path.cwd(), "groq", "api-key", "", "", {}, mode="ask", images=[image])
         payload = json.loads(opener.call_args.args[0].data.decode())
@@ -50,6 +51,21 @@ class AgentModeTests(unittest.TestCase):
         command_tools = {tool["function"]["name"] for tool in tools_for_mode("code", False, True)}
         self.assertIn("execute_command", command_tools)
         self.assertNotIn("write_file", command_tools)
+
+    def test_agent_provider_resolves_azure_endpoint_and_deployment(self):
+        with patch("backend.agent.resolve_public_addresses", return_value=(("ipv4",),)) as resolver:
+            endpoint, key, model, addresses = _provider(
+                "azure_openai", "manual-key", "", "", {
+                    "AZURE_OPENAI_ENDPOINT": "https://resource.openai.azure.com/openai/v1",
+                    "AZURE_OPENAI_DEPLOYMENT": "deployment-a",
+                    "AZURE_OPENAI_API_KEY": "environment-key",
+                },
+            )
+        self.assertEqual(endpoint, "https://resource.openai.azure.com/openai/v1/chat/completions")
+        self.assertEqual(key, "manual-key")
+        self.assertEqual(model, "deployment-a")
+        self.assertEqual(addresses, (("ipv4",),))
+        resolver.assert_called_once()
 
     def test_architect_mode_can_only_edit_markdown(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -137,6 +153,97 @@ class AgentEditingToolTests(unittest.TestCase):
             self.assertIn("braincell-agent-ok", enabled["stdout"])
             self.assertFalse(enabled["timed_out"])
 
+    def test_command_timeout_kills_the_entire_posix_process_group(self):
+        import subprocess
+        process = MagicMock()
+        process.pid = 4567
+        process.stdout = io.BytesIO()
+        process.stderr = io.BytesIO()
+        process.wait.side_effect = [subprocess.TimeoutExpired("command", 1), -9]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with \
+                patch("backend.agent.os.name", "posix"), \
+                patch("backend.agent.signal.SIGKILL", 9, create=True), \
+                patch("backend.agent.subprocess.Popen", return_value=process), \
+                patch("backend.agent.os.killpg", create=True) as killpg:
+                from backend.agent import _execute_command
+                result = _execute_command("sleep 10", root, 1)
+        killpg.assert_called_once_with(4567, 9)
+        self.assertTrue(result["timed_out"])
+
+    def test_command_timeout_uses_windows_process_tree_termination(self):
+        import subprocess
+        process = MagicMock()
+        process.pid = 4568
+        process.stdout = io.BytesIO()
+        process.stderr = io.BytesIO()
+        process.wait.side_effect = [subprocess.TimeoutExpired("command", 1), 1]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            job = MagicMock()
+            job.assign.return_value = True
+            with patch("backend.agent.os.name", "nt"), \
+                    patch("backend.agent.subprocess.CREATE_NEW_PROCESS_GROUP", 512, create=True), \
+                    patch("backend.agent._WindowsJob", return_value=job), \
+                    patch("backend.agent.subprocess.Popen", return_value=process), \
+                    patch("backend.agent.subprocess.run") as taskkill:
+                from backend.agent import _execute_command
+                result = _execute_command("timeout 10", root, 1)
+        self.assertTrue(result["timed_out"])
+        job.close.assert_called_once()
+        taskkill.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == "win32", "Requires native Windows Job Objects")
+    def test_windows_job_object_kills_real_grandchild_on_timeout(self):
+        import ctypes
+        import subprocess
+        import time
+
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = Path(directory) / "child.pid"
+            child_code = "import time; time.sleep(30)"
+            parent_code = (
+                "import subprocess,sys,time; "
+                f"child=subprocess.Popen([sys.executable,'-c',{child_code!r}]); "
+                f"open({str(pid_file)!r},'w').write(str(child.pid)); "
+                "time.sleep(30)"
+            )
+            command = subprocess.list2cmdline([sys.executable, "-c", parent_code])
+            from backend.agent import _execute_command
+            result = _execute_command(command, Path(directory), 2)
+            self.assertTrue(result["timed_out"])
+            self.assertTrue(pid_file.exists())
+            child_pid = int(pid_file.read_text(encoding="utf-8"))
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+            kernel32.WaitForSingleObject.restype = ctypes.c_ulong
+            kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+            process_handle = kernel32.OpenProcess(0x1000, False, child_pid)
+            if process_handle:
+                wait_result = kernel32.WaitForSingleObject(process_handle, 1000)
+                kernel32.CloseHandle(process_handle)
+                self.assertEqual(wait_result, 0, "The command's grandchild remained alive after the Job Object closed.")
+
+    def test_command_slot_limit_fails_fast_when_saturated(self):
+        from backend.agent import _execute_command
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("backend.agent._COMMAND_SLOTS.acquire", return_value=False):
+            with self.assertRaisesRegex(ValueError, "Too many workspace commands"):
+                _execute_command("echo blocked", Path(directory), 1)
+
+    def test_command_environment_excludes_provider_credentials(self):
+        from backend.agent import _command_environment
+        with patch.dict("os.environ", {
+            "OPENAI_API_KEY": "must-not-be-inherited",
+            "GROQ_API_KEY": "also-secret",
+            "PATH": "safe-path",
+        }, clear=True):
+            environment = _command_environment()
+        self.assertEqual(environment, {"PATH": "safe-path"})
+
 
 class AgentWorkflowTests(unittest.TestCase):
     @staticmethod
@@ -166,6 +273,42 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertEqual(messages[-1]["content"], "Now fix the issue")
         self.assertIn("Prior work", messages[1]["content"])
         self.assertFalse(any(message.get("role") == "tool" for message in messages))
+
+    def test_agent_task_runtime_budget_fails_before_provider_request(self):
+        with self.assertRaisesRegex(ValueError, "5-minute execution limit"):
+            run_agent(
+                "task", [], Path.cwd(), "groq", "api-key", "", "", {}, mode="ask",
+                _task_budget={"deadline": 0, "tool_calls": 0, "tool_output_chars": 0},
+            )
+
+    def test_agent_task_tool_call_budget_is_aggregate_and_fails_closed(self):
+        response = self._openai_tool_response([{
+            "id": "read-1", "type": "function", "function": {
+                "name": "read_file", "arguments": '{"path":"README.md"}',
+            },
+        }])
+        with patch("backend.agent.open_provider_request", return_value=response):
+            with self.assertRaisesRegex(ValueError, "total tool-call limit"):
+                run_agent(
+                    "read the readme", [], Path.cwd(), "groq", "api-key", "", "", {}, mode="code",
+                    _task_budget={"deadline": 10**12, "tool_calls": 32, "tool_output_chars": 0},
+                )
+
+    def test_agent_task_tool_output_budget_is_aggregate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "large.txt").write_text("x" * 100, encoding="utf-8")
+            response = self._openai_tool_response([{
+                "id": "read-1", "type": "function", "function": {
+                    "name": "read_file", "arguments": '{"path":"large.txt"}',
+                },
+            }])
+            with patch("backend.agent.open_provider_request", return_value=response):
+                with self.assertRaisesRegex(ValueError, "cumulative tool-output limit"):
+                    run_agent(
+                        "read the file", [], root, "groq", "api-key", "", "", {}, mode="code",
+                        _task_budget={"deadline": 10**12, "tool_calls": 0, "tool_output_chars": 200_000},
+                    )
 
     def test_followup_completion_and_mode_tools_return_structured_states(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -334,7 +477,7 @@ class AgentWorkflowTests(unittest.TestCase):
         response = MagicMock()
         response.read.return_value = b'{"content":[{"type":"text","text":"Answer"}]}'
         response.__enter__.return_value = response
-        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode()
+        image = "data:image/png;base64," + base64.b64encode(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==")).decode()
         with patch("backend.agent.open_provider_request", return_value=response) as opener:
             run_agent(
                 "describe", [], Path.cwd(), "anthropic", "api-key", "", "claude-test", {},

@@ -30,7 +30,7 @@ class ApprovalRegistry:
 
     def _prune(self) -> None:
         now = time.monotonic()
-        expired = [key for key, item in self._pending.items() if now - item.created_at > self.timeout]
+        expired = [key for key, item in self._pending.items() if now - item.created_at >= self.timeout]
         for key in expired:
             item = self._pending.pop(key)
             item.decision = False
@@ -61,7 +61,8 @@ class ApprovalRegistry:
         with self._lock:
             self._prune()
             pending = self._pending.get(approval_id)
-            if pending is None or pending.session_id != session_id or pending.decision is not None:
+            if (pending is None or pending.session_id != session_id or pending.decision is not None
+                    or time.monotonic() - pending.created_at >= self.timeout):
                 return False
             pending.decision = bool(decision)
             pending.ready.set()

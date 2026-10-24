@@ -59,7 +59,7 @@ GROQ_MODEL=llama-3.3-70b-versatile
 PORT=8000
 ```
 
-You can also enter a key in a provider profile in the interface. Saved profile keys are kept in the local Python process memory and override that provider's `.env` value. They are cleared when the app stops.
+You can also enter a key in a provider profile in the interface. Saved profile keys are kept in local Python process memory and override that provider's `.env` value. They are cleared when the app stops, expire after 24 hours, and are capped at 128 profiles.
 
 ### 3. Start BrainCellGPT
 
@@ -83,6 +83,7 @@ Select the provider in the chat interface. The credential must match the selecte
 | --- | --- | --- |
 | Groq | `GROQ_API_KEY` | Default provider |
 | OpenAI | `OPENAI_API_KEY` | Set `OPENAI_MODEL` if needed |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY` | Set `AZURE_OPENAI_ENDPOINT` to the Azure `/openai/v1` base and `AZURE_OPENAI_DEPLOYMENT` to the deployment name |
 | Google Gemini | `GEMINI_API_KEY` | OpenAI-compatible Gemini API; set `GEMINI_MODEL` if needed |
 | Anthropic | `ANTHROPIC_API_KEY` | Uses Anthropic's Messages API |
 | OpenRouter | `OPENROUTER_API_KEY` | Set `OPENROUTER_MODEL` if needed |

@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from backend.agent import run_agent
-from backend.mcp_stdio import MCPToolRouter, _StreamableHTTPClient, call_tool, discover_tools, load_server_specs, _safe_child_environment, _mcp_header_value, _normalize_tool
+from backend.mcp_stdio import MCPToolRouter, _StreamableHTTPClient, call_tool, discover_tools, load_server_specs, _safe_child_environment, _mcp_header_value, _normalize_tool, _validate_tool_arguments
 
 
 MODERN_SERVER = r'''
@@ -67,6 +67,30 @@ def configured_env(script: str, name: str = "fixture") -> dict[str, str]:
 
 
 class MCPStdioClientTests(unittest.TestCase):
+    def test_mcp_argument_validation_enforces_required_types_and_bounds(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "maxLength": 20},
+                "count": {"type": "integer", "minimum": 1, "maximum": 3},
+            },
+            "required": ["text"],
+            "additionalProperties": False,
+        }
+        _validate_tool_arguments(schema, {"text": "hello", "count": 2})
+        for arguments in (
+            {},
+            {"text": 1},
+            {"text": "hello", "count": 4},
+            {"text": "hello", "extra": True},
+        ):
+            with self.subTest(arguments=arguments), self.assertRaises(ValueError):
+                _validate_tool_arguments(schema, arguments)
+
+    def test_mcp_argument_validation_rejects_oversized_and_deep_arguments(self):
+        with self.assertRaisesRegex(ValueError, "size limit"):
+            _validate_tool_arguments({"type": "object"}, {"value": "x" * 70_000})
+
     def _discover_and_call(self, server_env):
         tools, routes = discover_tools(server_env, Path.cwd())
         self.assertEqual(len(tools), 1)

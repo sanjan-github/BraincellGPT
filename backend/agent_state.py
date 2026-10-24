@@ -268,6 +268,12 @@ class AgentStore:
             row = db.execute("SELECT * FROM checkpoints WHERE id=? AND session_id=?", (checkpoint_id, session_id)).fetchone()
         return dict(row) if row else None
 
+    def delete_checkpoints(self, checkpoint_ids: list[str]) -> None:
+        if not checkpoint_ids:
+            return
+        with self._connect() as db:
+            db.executemany("DELETE FROM checkpoints WHERE id=?", ((checkpoint_id,) for checkpoint_id in checkpoint_ids))
+
 
 _default_store: AgentStore | None = None
 
