@@ -1,13 +1,16 @@
 import json
+import email.message
+import io
 import os
 import subprocess
 import sys
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from backend.agent import run_agent
-from backend.mcp_stdio import MCPToolRouter, call_tool, discover_tools, load_server_specs, _safe_child_environment, _mcp_header_value, _normalize_tool
+from backend.mcp_stdio import MCPToolRouter, _StreamableHTTPClient, call_tool, discover_tools, load_server_specs, _safe_child_environment, _mcp_header_value, _normalize_tool
 
 
 MODERN_SERVER = r'''
@@ -243,6 +246,21 @@ class MCPStdioClientTests(unittest.TestCase):
             finally:
                 router.close()
         opener.assert_not_called()
+
+    def test_remote_mcp_http_error_closes_response_body(self):
+        spec = load_server_specs({"BRAINCELLGPT_MCP_SERVERS": json.dumps([{
+            "name": "remote", "url": "https://mcp.example.test/mcp",
+        }])})[0]
+        error_body = io.BytesIO(b"provider unavailable")
+        error = urllib.error.HTTPError(
+            spec.url, 500, "Internal Server Error", email.message.Message(), error_body,
+        )
+        with patch("backend.mcp_stdio.resolve_public_addresses", return_value=((2, 1, 6, ("203.0.113.40", 443)),)):
+            client = _StreamableHTTPClient(spec)
+        with patch("backend.mcp_stdio.open_provider_request", side_effect=error):
+            with self.assertRaisesRegex(ValueError, "status 500"):
+                client._post({"jsonrpc": "2.0", "id": 1, "method": "test"}, 1)
+        self.assertTrue(error_body.closed)
 
     def test_remote_legacy_http_negotiates_session_and_accepts_sse(self):
         server_env = {"BRAINCELLGPT_MCP_SERVERS": json.dumps([{

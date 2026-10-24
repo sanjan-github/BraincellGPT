@@ -48,6 +48,19 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
         self.assertIn("trusted loopback", request.response[1]["error"])
         provider.assert_not_called()
 
+    def test_health_includes_all_registered_providers_without_credentials(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        try:
+            connection.request("GET", "/health")
+            response = connection.getresponse()
+            payload = json.loads(response.read().decode())
+            self.assertEqual(response.status, 200)
+            self.assertEqual(set(payload["providers"]), set(app.SUPPORTED_PROVIDER_NAMES))
+            self.assertIn("gemini", payload["providers"])
+            self.assertNotIn("GEMINI_API_KEY", json.dumps(payload))
+        finally:
+            connection.close()
+
     def test_oauth_loopback_callback_accepts_state_bound_cross_site_redirect(self):
         state = "oauth-test-state"
         mcp_oauth._PENDING[state] = mcp_oauth._PendingAuthorization(

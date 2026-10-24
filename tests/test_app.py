@@ -179,12 +179,13 @@ class ApiReliabilityTests(unittest.TestCase):
                 app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
 
     def test_provider_http_error_redacts_api_key(self):
+        error_body = io.BytesIO(b'{"error":{"message":"bad secret-key"}}')
         error = urllib.error.HTTPError(
             "https://api.groq.com/openai/v1/chat/completions",
             403,
             "Forbidden",
             email.message.Message(),
-            io.BytesIO(b'{"error":{"message":"bad secret-key"}}'),
+            error_body,
         )
 
         with patch("app.open_provider_request", side_effect=error):
@@ -192,6 +193,7 @@ class ApiReliabilityTests(unittest.TestCase):
                 app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
 
         self.assertNotIn("secret-key", str(raised.exception))
+        self.assertTrue(error_body.closed)
 
 
 class ConversationMemoryTests(unittest.TestCase):

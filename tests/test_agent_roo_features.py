@@ -1,6 +1,9 @@
+import email.message
+import io
 import json
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -237,6 +240,17 @@ class AgentWorkflowTests(unittest.TestCase):
         with patch("backend.agent.open_provider_request", return_value=self._openai_tool_response(calls)):
             with self.assertRaisesRegex(ValueError, "too many tool calls"):
                 run_agent("inspect", [], Path.cwd(), "groq", "key", "", "", {})
+
+    def test_agent_provider_http_error_closes_response(self):
+        error_body = io.BytesIO(b'{"error":"forbidden"}')
+        error = urllib.error.HTTPError(
+            "https://api.groq.com/openai/v1/chat/completions", 403, "Forbidden",
+            email.message.Message(), error_body,
+        )
+        with patch("backend.agent.open_provider_request", side_effect=error):
+            with self.assertRaisesRegex(ValueError, "HTTP 403"):
+                run_agent("inspect", [], Path.cwd(), "groq", "key", "", "", {})
+        self.assertTrue(error_body.closed)
 
     def test_unknown_tool_returns_a_controlled_tool_error(self):
         final = MagicMock()

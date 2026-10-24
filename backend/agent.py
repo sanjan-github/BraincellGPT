@@ -1037,6 +1037,7 @@ def run_agent(
             finally:
                 _PROVIDER_SLOTS.release()
         except urllib.error.HTTPError as exc:
+            exc.close()
             raise ValueError("Provider returned HTTP " + str(exc.code) + ". Check the key, model, and tool-calling support.") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise ValueError("Could not reach the selected provider.") from exc

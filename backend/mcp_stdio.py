@@ -694,19 +694,22 @@ class _StreamableHTTPClient:
                     scope_upgrade = exc.code == 403
                     exc.close()
                 else:
-                    if exc.code in (400, 404, 405):
-                        body = exc.read(MAX_FRAME_BYTES + 1)
-                        try:
-                            error_payload = json.loads(body.decode("utf-8")) if len(body) <= MAX_FRAME_BYTES else {}
-                        except (UnicodeDecodeError, json.JSONDecodeError):
-                            error_payload = {}
-                        rpc_error = error_payload.get("error") if isinstance(error_payload, dict) else None
-                        error_code = rpc_error.get("code") if isinstance(rpc_error, dict) else None
-                        if self._connecting and error_code == -32601:
-                            raise _MethodNotFound("MCP server does not support server discovery.") from exc
-                        if self._connecting:
-                            raise _LegacyFallback from exc
-                    raise ValueError(f"MCP HTTP request failed with status {exc.code}.") from exc
+                    try:
+                        if exc.code in (400, 404, 405):
+                            body = exc.read(MAX_FRAME_BYTES + 1)
+                            try:
+                                error_payload = json.loads(body.decode("utf-8")) if len(body) <= MAX_FRAME_BYTES else {}
+                            except (UnicodeDecodeError, json.JSONDecodeError):
+                                error_payload = {}
+                            rpc_error = error_payload.get("error") if isinstance(error_payload, dict) else None
+                            error_code = rpc_error.get("code") if isinstance(rpc_error, dict) else None
+                            if self._connecting and error_code == -32601:
+                                raise _MethodNotFound("MCP server does not support server discovery.") from exc
+                            if self._connecting:
+                                raise _LegacyFallback from exc
+                        raise ValueError(f"MCP HTTP request failed with status {exc.code}.") from exc
+                    finally:
+                        exc.close()
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise ValueError("Could not reach the configured remote MCP server.") from exc
         finally:

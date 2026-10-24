@@ -40,6 +40,7 @@ _profile_secrets_lock = Lock()
 MAX_RATE_BUCKETS = 2048
 MAX_PROVIDER_RESPONSE_BYTES = SHARED_MAX_PROVIDER_RESPONSE_BYTES
 _provider_slots = PROVIDER_SLOTS
+SUPPORTED_PROVIDER_NAMES = tuple(OPENAI_COMPATIBLE_PROVIDERS) + ("anthropic", "ollama", "lmstudio", "custom")
 
 
 def rate_limited(client_ip: str) -> bool:
@@ -318,6 +319,8 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
                 detail = parsed_error.get("message", "")
         except (ValueError, AttributeError):
             detail = ""
+        finally:
+            exc.close()
         detail = str(detail).replace(api_key, "[redacted]") if api_key else str(detail)
         detail = " ".join(detail.split())[:300]
         suffix = " Provider detail: " + detail if detail else ""
@@ -410,7 +413,7 @@ class Handler(BaseHTTPRequestHandler):
             file_path = WEB_DIR / "assets" / "earth-blue-marble.jpg"
             content_type = "image/jpeg"
         elif path == "/health":
-            self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": ["groq", "openai", "anthropic", "openrouter", "nvidia_nim", "deepseek", "mistral", "xai", "together", "fireworks", "cerebras", "ollama", "lmstudio", "custom"]})
+            self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": list(SUPPORTED_PROVIDER_NAMES)})
             return
         elif path == "/api/mcp/oauth/callback":
             if self.client_address[0] not in ("127.0.0.1", "::1") or not self.is_trusted_local_request(allow_cross_site_redirect=True):
