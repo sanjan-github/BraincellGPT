@@ -23,9 +23,16 @@ class AgentWorkspaceSafetyTests(unittest.TestCase):
             "certificate.pem": "needle-protected",
             "id_rsa": "needle-protected",
             "authorized_keys": "needle-protected",
+            ".npmrc": "needle-protected",
+            ".pypirc": "needle-protected",
+            ".netrc": "needle-protected",
         }
         for name, value in protected.items():
             (self.root / name).write_text(value, encoding="utf-8")
+        for directory in (".ssh", ".aws", ".azure", ".gnupg", ".kube"):
+            sensitive_dir = self.root / directory
+            sensitive_dir.mkdir()
+            (sensitive_dir / "config").write_text("needle-protected", encoding="utf-8")
         (self.root / "visible.txt").write_text("needle-visible", encoding="utf-8")
 
         listed = json.loads(run_tool("list_files", {}, self.root, allow_edits=False))
