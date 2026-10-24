@@ -51,14 +51,13 @@ and extension-host APIs are outside this backend port.
   pinned public-IP connections for custom provider URLs.
 - Bounded inline image input for chat and agent APIs, converted to native
   OpenAI-compatible or Anthropic image blocks; session history stores text only.
+- HTTP acceptance coverage for OAuth callback, task persistence, streamed tool
+  approval, and API-level rollback/redo.
 
 ## Remaining backend work
 
 1. Broaden credential-store validation across supported desktop platforms.
 2. Expand provider adapters and model capability metadata.
-3. Add end-to-end acceptance coverage for OAuth callback, task persistence,
-   approval, streaming,
-   and rollback.
 
 ## Current API extension
 

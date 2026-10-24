@@ -5,7 +5,7 @@ import threading
 import unittest
 from pathlib import Path
 from http.server import ThreadingHTTPServer
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import app
 from backend.agent_state import AgentStore
@@ -173,6 +173,54 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
                     self.assertEqual([event["type"] for event in events], ["start", "text_delta", "done"])
                     self.assertEqual(events[-1]["result"]["reply"], "hello")
                     self.assertEqual(len(store.list_sessions(str(app.ROOT.resolve()))), 1)
+        finally:
+            connection.close()
+
+    def test_agent_edit_session_rolls_back_and_redoes_through_api(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        def provider_response(message):
+            response = MagicMock()
+            response.read.return_value = json.dumps({"choices": [{"message": message}]}).encode()
+            response.__enter__.return_value = response
+            return response
+
+        tool_response = provider_response({"content": None, "tool_calls": [{
+            "id": "write-1", "type": "function", "function": {
+                "name": "write_file", "arguments": '{"path":"note.txt","content":"created by the agent"}',
+            },
+        }]})
+        final_response = provider_response({"content": "Finished."})
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / "workspace"
+                root.mkdir()
+                store = AgentStore(Path(directory) / "agent.sqlite3")
+                body = json.dumps({"task": "create a note", "provider": "groq", "profile_id": "test-profile", "allow_edits": True})
+                with patch("app.PORT", self.server.server_port), patch("app.ROOT", root), \
+                     patch("app.get_agent_store", return_value=store), patch("backend.agent.get_agent_store", return_value=store), \
+                     patch.dict(app._profile_secrets, {"test-profile": "test-key"}), \
+                     patch("backend.agent.open_provider_request", side_effect=[tool_response, final_response]):
+                    connection.request("POST", "/api/agent", body=body, headers={"Content-Type": "application/json"})
+                    response = connection.getresponse()
+                    result = json.loads(response.read().decode())
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(result["reply"], "Finished.")
+                    self.assertEqual((root / "note.txt").read_text(encoding="utf-8"), "created by the agent")
+
+                    groups = store.list_checkpoint_groups(result["session_id"])
+                    self.assertEqual(len(groups), 1)
+                    restore_body = json.dumps({"session_id": result["session_id"], "group_id": groups[0]["id"], "allow_edits": True})
+                    connection.request("POST", "/api/agent/restore", body=restore_body, headers={"Content-Type": "application/json"})
+                    restore_response = connection.getresponse()
+                    restored = json.loads(restore_response.read().decode())
+                    self.assertEqual(restore_response.status, 200)
+                    self.assertFalse((root / "note.txt").exists())
+
+                    redo_body = json.dumps({"session_id": result["session_id"], "group_id": restored["redo_group_id"], "allow_edits": True})
+                    connection.request("POST", "/api/agent/restore", body=redo_body, headers={"Content-Type": "application/json"})
+                    redo_response = connection.getresponse()
+                    self.assertEqual(redo_response.status, 200)
+                    self.assertEqual((root / "note.txt").read_text(encoding="utf-8"), "created by the agent")
         finally:
             connection.close()
 
