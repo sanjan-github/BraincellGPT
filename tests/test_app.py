@@ -248,5 +248,47 @@ class ModelCompatibilityTests(unittest.TestCase):
         self.assertEqual(payload["model"], "llama3.2")
 
 
+class LocalRequestBoundaryTests(unittest.TestCase):
+    def make_handler(self, host="localhost:8000", origin=None, fetch_site=None):
+        handler = app.Handler.__new__(app.Handler)
+        handler.headers = email.message.Message()
+        handler.headers["Host"] = host
+        if origin is not None:
+            handler.headers["Origin"] = origin
+        if fetch_site is not None:
+            handler.headers["Sec-Fetch-Site"] = fetch_site
+        return handler
+
+    def test_allows_loopback_host_without_origin_for_local_clients(self):
+        self.assertTrue(self.make_handler(host="localhost:8000").is_trusted_local_request())
+        self.assertTrue(self.make_handler(host="127.0.0.1:8000").is_trusted_local_request())
+
+    def test_allows_matching_loopback_origin(self):
+        handler = self.make_handler(
+            host="localhost:8000", origin="http://localhost:8000", fetch_site="same-origin"
+        )
+        self.assertTrue(handler.is_trusted_local_request())
+
+    def test_rejects_untrusted_host_and_cross_origin(self):
+        for handler in (
+            self.make_handler(host="evil.example:8000"),
+            self.make_handler(host="localhost:8000", origin="https://localhost:8000"),
+            self.make_handler(host="localhost:8000", origin="http://evil.example:8000"),
+            self.make_handler(host="localhost:8000", origin="http://localhost:9000"),
+            self.make_handler(host="localhost:8000", fetch_site="cross-site"),
+        ):
+            with self.subTest(headers=dict(handler.headers)):
+                self.assertFalse(handler.is_trusted_local_request())
+
+    def test_rejects_malformed_host(self):
+        self.assertFalse(self.make_handler(host="localhost:not-a-port").is_trusted_local_request())
+
+    def test_chat_and_agent_share_one_provider_concurrency_limiter(self):
+        from backend import agent, provider_http
+
+        self.assertIs(app._provider_slots, provider_http.PROVIDER_SLOTS)
+        self.assertIs(agent._PROVIDER_SLOTS, provider_http.PROVIDER_SLOTS)
+
+
 if __name__ == "__main__":
     unittest.main()
