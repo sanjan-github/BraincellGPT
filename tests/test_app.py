@@ -29,6 +29,13 @@ class ProviderConfigurationTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             app.validate_provider_url("custom", "http://example.com/v1")
 
+    def test_custom_provider_rejects_invalid_ports_before_dns(self):
+        for url in ("https://example.com:0/v1", "https://example.com:not-a-port/v1", "https://[broken/v1"):
+            with self.subTest(url=url), patch("app.resolve_public_addresses") as resolver:
+                with self.assertRaises(RuntimeError):
+                    app.validate_provider_url("custom", url)
+                resolver.assert_not_called()
+
     def test_provider_settings_reject_url_credentials_and_query(self):
         with self.assertRaises(RuntimeError):
             app.validate_provider_url("custom", "https://user:pass@example.com/v1")
@@ -40,9 +47,33 @@ class ProviderConfigurationTests(unittest.TestCase):
             app.generate_reply("hello", [], "normal", provider="unknown-provider")
 
     def test_custom_url_rejects_local_and_private_addresses(self):
-        with patch("app.socket.getaddrinfo", return_value=[(None, None, None, None, ("127.0.0.1", 443))]):
+        with patch("app.resolve_public_addresses", side_effect=ValueError("Custom provider URL cannot resolve to a private or local network address.")):
             with self.assertRaisesRegex(RuntimeError, "private or local"):
                 app.validate_provider_url("custom", "https://example.com/v1")
+
+    def test_custom_provider_request_uses_the_addresses_that_were_validated(self):
+        response = MagicMock()
+        response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
+        response.__enter__.return_value = response
+        pinned = ((2, 1, 6, ("93.184.216.34", 443)),)
+
+        with patch("app.resolve_public_addresses", return_value=pinned), patch("app.open_provider_request", return_value=response) as opener:
+            result = app.generate_reply(
+                "hello", [], "normal", provider="custom", user_api_key="custom-key",
+                base_url="https://provider.example/v1", model_override="custom-model",
+            )
+
+        self.assertEqual(result, "reply")
+        self.assertEqual(opener.call_args.kwargs["pinned_addresses"], pinned)
+
+    def test_custom_provider_rejects_dns_failure_before_request(self):
+        with patch("app.resolve_public_addresses", side_effect=ValueError("Could not resolve the custom provider host.")), patch("app.open_provider_request") as opener:
+            with self.assertRaisesRegex(RuntimeError, "Could not resolve"):
+                app.generate_reply(
+                    "hello", [], "normal", provider="custom", user_api_key="custom-key",
+                    base_url="https://provider.example/v1", model_override="custom-model",
+                )
+        opener.assert_not_called()
 
     def test_history_rejects_non_string_content(self):
         history = [{"role": "user", "content": {"unexpected": "object"}}, {"role": "user", "content": "valid"}]
@@ -76,7 +107,7 @@ class ApiReliabilityTests(unittest.TestCase):
         response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
         response.__enter__.return_value = response
 
-        with patch("app.open_provider_request", return_value=response) as urlopen:
+        with patch.dict(os.environ, {"GROQ_MODEL": ""}), patch("app.open_provider_request", return_value=response) as urlopen:
             self.assertEqual(app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key"), "reply")
 
         request = urlopen.call_args.args[0]

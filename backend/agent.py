@@ -6,9 +6,7 @@ edits are disabled unless the caller explicitly opts in for a task.
 from __future__ import annotations
 
 import json
-import ipaddress
 import os
-import socket
 import urllib.error
 import urllib.request
 import re
@@ -17,7 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from backend.provider_http import open_provider_request
+from backend.provider_http import open_provider_request, resolve_public_addresses
 
 
 MAX_FILE_BYTES = 200_000
@@ -152,8 +150,9 @@ def _provider(provider: str, api_key: str, base_url: str, model: str, environ: d
     }
     if provider in registry:
         endpoint, default_model, key_env, model_env = registry[provider]
-        return endpoint + "/chat/completions", api_key or environ.get(key_env, ""), model or environ.get(model_env, "") or default_model
+        return endpoint + "/chat/completions", api_key or environ.get(key_env, ""), model or environ.get(model_env, "") or default_model, None
     if provider in ("ollama", "lmstudio", "custom"):
+        pinned_addresses = None
         if provider == "ollama":
             base_url = base_url or "http://localhost:11434/v1"
             default_model = "llama3.2"
@@ -168,15 +167,16 @@ def _provider(provider: str, api_key: str, base_url: str, model: str, environ: d
             if parsed_local.scheme != "http" or parsed_local.hostname not in ("localhost", "127.0.0.1", "::1") or parsed_local.username or parsed_local.password or parsed_local.query or parsed_local.fragment:
                 raise ValueError("Local model endpoint must use HTTP and point to localhost without credentials, query strings, or fragments.")
         if provider == "custom":
-            parsed = urlsplit(base_url)
+            try:
+                parsed = urlsplit(base_url)
+                port = parsed.port
+            except ValueError as exc:
+                raise ValueError("Custom endpoint URL is invalid.") from exc
             if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
                 raise ValueError("Custom endpoint must use HTTPS without credentials, query strings, or fragments.")
-            try:
-                addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)}
-            except socket.gaierror as exc:
-                raise ValueError("Could not resolve the custom provider host.") from exc
-            if any(not address.is_global for address in addresses):
-                raise ValueError("Custom provider URL cannot resolve to a private or local network address.")
+            if port == 0:
+                raise ValueError("Custom endpoint port must be between 1 and 65535.")
+            pinned_addresses = resolve_public_addresses(parsed.hostname, port or 443)
         if not base_url:
             raise ValueError("Configure a provider endpoint first.")
         if provider == "custom" and not (model or default_model):
@@ -185,12 +185,12 @@ def _provider(provider: str, api_key: str, base_url: str, model: str, environ: d
         if not endpoint.endswith("/chat/completions"):
             endpoint += "/chat/completions"
         secret = api_key or (environ.get("CUSTOM_API_KEY", "") if provider == "custom" else "")
-        return endpoint, secret, model or default_model or "local-model"
+        return endpoint, secret, model or default_model or "local-model", pinned_addresses
     raise ValueError("The coding agent requires an OpenAI-compatible provider. Anthropic support is not available in this endpoint yet.")
 
 
 def run_agent(task: str, history: list[dict], root: Path, provider: str, api_key: str, base_url: str, model: str, environ: dict[str, str], allow_edits: bool = False) -> dict:
-    endpoint, secret, model_name = _provider(provider, api_key, base_url, model, environ)
+    endpoint, secret, model_name, pinned_addresses = _provider(provider, api_key, base_url, model, environ)
     if provider not in ("ollama", "lmstudio") and not secret:
         raise ValueError("No API key is configured for this provider.")
     if len(secret) > 500 or len(model_name) > 300:
@@ -229,7 +229,7 @@ def run_agent(task: str, history: list[dict], root: Path, provider: str, api_key
             if not _PROVIDER_SLOTS.acquire(timeout=2):
                 raise ValueError("BrainCellGPT is busy handling other provider requests. Try again shortly.")
             try:
-                with open_provider_request(request, timeout=90) as response:
+                with open_provider_request(request, timeout=90, pinned_addresses=pinned_addresses) as response:
                     data = _read_provider_json(response)
             finally:
                 _PROVIDER_SLOTS.release()

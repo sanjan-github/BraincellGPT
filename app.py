@@ -15,11 +15,9 @@ from urllib.parse import parse_qs, urlparse, urlsplit
 from collections import defaultdict, deque
 from threading import Lock
 import time
-import ipaddress
-import socket
 import re
 from backend.agent import run_agent
-from backend.provider_http import open_provider_request
+from backend.provider_http import open_provider_request, resolve_public_addresses
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
@@ -84,26 +82,35 @@ def trim_history(history: list[dict], max_items: int = MAX_HISTORY_MESSAGES, max
     return list(reversed(trimmed))
 
 
-def validate_provider_url(provider: str, value: str) -> str:
+def validate_provider_url_with_addresses(provider: str, value: str) -> tuple[str, tuple | None]:
     raw = value.strip()
     if len(raw) > 2000:
         raise RuntimeError("Provider URL is too long.")
-    parsed = urlsplit(raw)
+    try:
+        parsed = urlsplit(raw)
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError("Provider URL is invalid.") from exc
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise RuntimeError("Provider URL must not contain credentials, query strings, or fragments.")
+    if port == 0:
+        raise RuntimeError("Provider URL port must be between 1 and 65535.")
     if provider in ("ollama", "lmstudio"):
         if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
             raise RuntimeError("Local model URLs must use HTTP and point to localhost on this machine.")
-        return raw.rstrip("/")
+        return raw.rstrip("/"), None
     if parsed.scheme != "https" or not parsed.hostname:
         raise RuntimeError("Custom provider URLs must use HTTPS.")
     try:
-        addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)}
-        if any(not address.is_global for address in addresses):
-            raise RuntimeError("Custom provider URL cannot resolve to a private or local network address.")
-    except socket.gaierror as exc:
-        raise RuntimeError("Could not resolve the custom provider host.") from exc
-    return raw.rstrip("/")
+        addresses = resolve_public_addresses(parsed.hostname, port or 443)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+    return raw.rstrip("/"), addresses
+
+
+def validate_provider_url(provider: str, value: str) -> str:
+    """Validate a provider URL and return its normalized base URL."""
+    return validate_provider_url_with_addresses(provider, value)[0]
 
 
 def load_dotenv() -> None:
@@ -219,6 +226,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     provider = provider.strip().lower()
     api_key = user_api_key.strip()
     model = model_override.strip()
+    pinned_addresses = None
     if provider in OPENAI_COMPATIBLE_PROVIDERS:
         config = OPENAI_COMPATIBLE_PROVIDERS[provider]
         api_key = api_key or (os.environ.get(config.get("env_key", ""), "").strip() if config.get("env_key") else "")
@@ -248,7 +256,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         model = model or os.environ.get("CUSTOM_MODEL", "").strip()
         if not base_url:
             raise RuntimeError("Enter an API base URL, or set CUSTOM_API_BASE_URL in .env.")
-        endpoint = validate_provider_url("custom", base_url)
+        endpoint, pinned_addresses = validate_provider_url_with_addresses("custom", base_url)
         if not endpoint.endswith("/chat/completions"):
             endpoint += "/chat/completions"
         if not model:
@@ -298,7 +306,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         if not _provider_slots.acquire(timeout=2):
             raise RuntimeError("BrainCellGPT is busy handling other provider requests. Try again shortly.")
         try:
-            with open_provider_request(request, timeout=60) as response:
+            with open_provider_request(request, timeout=60, pinned_addresses=pinned_addresses) as response:
                 data = _read_provider_json(response, label)
         finally:
             _provider_slots.release()
