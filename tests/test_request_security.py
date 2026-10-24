@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import app
 from backend.agent_state import AgentStore
+from backend.agent_approvals import ApprovalRegistry
 
 
 class RequestSecurityIntegrationTests(unittest.TestCase):
@@ -122,6 +123,71 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
                     self.assertEqual([event["type"] for event in events], ["start", "text_delta", "done"])
                     self.assertEqual(events[-1]["result"]["reply"], "hello")
                     self.assertEqual(len(store.list_sessions(str(app.ROOT.resolve()))), 1)
+        finally:
+            connection.close()
+
+    def test_streaming_tool_approval_pauses_until_session_scoped_decision(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        body = json.dumps({"task": "write a file", "provider": "groq"})
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                store = AgentStore(Path(directory) / "agent.sqlite3")
+                approvals = ApprovalRegistry(timeout=3)
+
+                def fake_agent(*_args, **kwargs):
+                    kwargs["event_callback"]({"type": "tool_start", "name": "write_file", "id": "call-1"})
+                    approved = kwargs["approval_callback"]({
+                        "type": "approval_required", "tool": "write_file", "call_id": "call-1",
+                        "arguments": {"path": "file.txt"},
+                    })
+                    return {"reply": "Approved." if approved else "Rejected.", "mode": "code", "steps": 1}
+
+                with patch("app.PORT", self.server.server_port), patch("app.get_agent_store", return_value=store), patch(
+                    "app.get_approval_registry", return_value=approvals
+                ), patch("app.run_agent", side_effect=fake_agent):
+                    connection.request(
+                        "POST", "/api/agent/stream", body=body,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    response = connection.getresponse()
+
+                    def read_event():
+                        while True:
+                            line = response.readline()
+                            if not line:
+                                return None
+                            if line.startswith(b"data: "):
+                                data = json.loads(line[6:].decode())
+                                response.readline()  # blank event separator
+                                return data
+
+                    start = read_event()
+                    tool_started = read_event()
+                    approval = read_event()
+                    self.assertEqual(start["type"], "start")
+                    self.assertEqual(tool_started["type"], "tool_start")
+                    self.assertEqual(approval["type"], "approval_required")
+
+                    decision = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+                    try:
+                        decision.request(
+                            "POST", "/api/agent/approvals",
+                            body=json.dumps({
+                                "approval_id": approval["approval_id"],
+                                "session_id": start["session_id"],
+                                "decision": "approve",
+                            }),
+                            headers={"Content-Type": "application/json"},
+                        )
+                        decision_response = decision.getresponse()
+                        self.assertEqual(decision_response.status, 200)
+                        self.assertTrue(json.loads(decision_response.read())["resolved"])
+                    finally:
+                        decision.close()
+
+                    done = read_event()
+                    self.assertEqual(done["type"], "done")
+                    self.assertEqual(done["result"]["reply"], "Approved.")
         finally:
             connection.close()
 

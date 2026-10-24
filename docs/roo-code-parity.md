@@ -13,7 +13,8 @@ and extension-host APIs are outside this backend port.
 - OpenAI-compatible tool calls and Anthropic's native Messages tool protocol.
 - Bounded list, read, and literal-search tools that omit protected paths.
 - Atomic file writes, exact-match search/replace, and guarded text diffs.
-- Request-level edit and command execution controls; commands have timeouts and
+- Streaming approval queue for each edit and command call, alongside backward-
+  compatible request-level edit and command flags. Commands have timeouts and
   bounded captured output.
 - Follow-up questions, completion, todo updates, mode switching, and bounded
   sequential subtasks.
@@ -29,10 +30,8 @@ and extension-host APIs are outside this backend port.
 
 ## Remaining backend work
 
-1. Replace request-level command/edit switches with a pending tool approval
-   queue and explicit approve/reject/resume operations.
-2. Add diff previews and grouped undo/history views for the existing checkpoints.
-3. Add configurable MCP stdio servers with tool/resource discovery and the same
+1. Add diff previews and grouped undo/history views for the existing checkpoints.
+2. Add configurable MCP stdio servers with tool/resource discovery and the same
    approval policy.
 4. Expand provider adapters and model capability metadata, then add semantic
   conversation compaction and image inputs.
@@ -50,4 +49,10 @@ nested levels. Sessions are managed through `GET /api/agent/sessions`,
 Restore a file snapshot with `POST /api/agent/restore` and `allow_edits: true`.
 Use `POST /api/agent/stream` with the same JSON body for a server-sent event
 stream. JSON `data:` frames report `start`, `text_delta`, `tool_start`,
-`tool_result`, `done`, or `error`; `done` carries the standard agent result.
+`approval_required`, `tool_result`, `done`, or `error`; `done` carries the
+standard agent result.
+Mutating tools emit `approval_required` with a bounded action preview and pause
+the stream. Resolve that specific action with `POST /api/agent/approvals` using
+`{ "approval_id", "session_id", "decision": "approve" | "reject" }`. The queue
+is in memory, bounded to 32 pending actions, and expires decisions after three
+minutes.

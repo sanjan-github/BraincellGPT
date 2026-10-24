@@ -656,6 +656,25 @@ def _bound_agent_messages(messages: list[dict]) -> list[dict]:
     return messages
 
 
+def _approval_preview(name: str, args: dict) -> dict:
+    """Expose a bounded proposed-action preview for the local approval UI."""
+    if name == "execute_command":
+        return {"command": str(args.get("command", ""))[:2000]}
+    preview = {"path": str(args.get("path", ""))[:1000]}
+    if name == "write_file":
+        content = args.get("content", "")
+        if isinstance(content, str):
+            preview.update({"bytes": len(content.encode("utf-8")), "content_preview": content[:2000], "truncated": len(content) > 2000})
+    else:
+        for key in ("old_text", "new_text"):
+            value = args.get(key, "")
+            if isinstance(value, str):
+                preview[key] = value[:1000]
+                if len(value) > 1000:
+                    preview[key + "_truncated"] = True
+    return preview
+
+
 def _provider(provider: str, api_key: str, base_url: str, model: str, environ: dict[str, str]):
     registry = {
         "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "GROQ_API_KEY", "GROQ_MODEL"),
@@ -732,6 +751,7 @@ def run_agent(
     _subtask_depth: int = 0,
     session_id: str | None = None,
     event_callback=None,
+    approval_callback=None,
 ) -> dict:
     provider = provider.strip().lower()
     mode = normalize_mode(mode)
@@ -763,7 +783,11 @@ def run_agent(
     todos: list[str] = []
     for _ in range(MAX_STEPS):
         _bound_agent_messages(messages)
-        active_tools = tools_for_mode(mode, allow_edits, allow_commands)
+        active_tools = tools_for_mode(
+            mode,
+            allow_edits or approval_callback is not None,
+            allow_commands or approval_callback is not None,
+        )
         if provider == "anthropic":
             payload = _anthropic_payload(model_name, messages, active_tools, 1800)
             if event_callback is not None:
@@ -842,6 +866,18 @@ def run_agent(
             mutating = name in {"write_file", "search_replace", "apply_diff", "execute_command"}
             if mutating and signature in executed_mutations:
                 result = json.dumps({"error": "Repeated identical mutating tool call was blocked to prevent an accidental loop."})
+            elif mutating and approval_callback is not None:
+                executed_mutations.add(signature)
+                approved = approval_callback({
+                    "type": "approval_required",
+                    "tool": name,
+                    "call_id": call["id"],
+                    "arguments": _approval_preview(name, args),
+                })
+                if approved:
+                    result = run_tool(name, args, root, True, True, mode, session_id)
+                else:
+                    result = json.dumps({"error": "The user rejected or did not approve this tool action."})
             elif name == "new_task":
                 subtask = args.get("task")
                 if mode != "orchestrator" or _subtask_depth >= 2:
@@ -855,6 +891,7 @@ def run_agent(
                             allow_edits=allow_edits, allow_commands=allow_commands,
                             mode=args.get("mode", "ask"), _subtask_depth=_subtask_depth + 1,
                             session_id=session_id, event_callback=event_callback,
+                            approval_callback=approval_callback,
                         )
                         result = json.dumps({"subtask_result": child})
                     except (RuntimeError, ValueError) as exc:

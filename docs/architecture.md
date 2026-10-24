@@ -30,8 +30,10 @@ tasks; add `?id=<session_id>` for turns and edit checkpoints. Delete a task with
 `DELETE /api/agent/sessions?id=<session_id>`. Restore an edit with
 `POST /api/agent/restore` and an explicit `allow_edits: true`. Use
 `POST /api/agent/stream` with the same body for server-sent events (`start`,
-`text_delta`, `tool_start`, `tool_result`, `done`, and `error`). These APIs are
+`text_delta`, `tool_start`, `approval_required`, `tool_result`, `done`, and `error`). These APIs are
 restricted to loopback clients like the other state-changing endpoints.
+Streaming edit and command calls pause with `approval_required`; approve or
+reject one with `POST /api/agent/approvals` scoped to the session and approval ID.
 
 The agent stores bounded task histories and up to 100 reversible file-edit
 checkpoints per session in a private SQLite database under the user's local
@@ -52,9 +54,9 @@ Roo Code parity work and remaining scope are tracked in
 - Agent session history is stored server-side in the local SQLite database;
   ordinary chat history remains browser-managed.
 - There is no authentication or MCP server integration.
-- Tool approval currently uses request-level edit and command flags; a per-tool
-  approval queue remains future work. Streaming progress and checkpoint restore
-  are implemented.
+- Non-streaming tool approval remains request-level; streaming agent calls also
+  support a bounded per-tool approval queue. Streaming progress and checkpoint
+  restore are implemented.
 - A client could submit fabricated history. Production systems should load conversation
   messages server-side after authorization.
 - Saved profile keys live only in server process memory; they are not written to disk,
