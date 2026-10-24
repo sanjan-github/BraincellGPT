@@ -172,7 +172,8 @@ class MCPOAuthFlowTests(unittest.TestCase):
 
 class MCPTransportOAuthTests(unittest.TestCase):
     def test_401_starts_oauth_then_retries_with_bearer_and_redacts_token(self):
-        spec = MCPServerSpec("remote", None, (), {}, "https://mcp.example.test/mcp", {})
+        server_url = "https://mcp.example.test/mcp"
+        spec = MCPServerSpec("remote", None, (), {}, server_url, {})
         response = MagicMock()
         response.read.return_value = b'{"jsonrpc":"2.0","id":1,"result":{"content":[]}}'
         response.__enter__.return_value = response
@@ -180,7 +181,7 @@ class MCPTransportOAuthTests(unittest.TestCase):
         error_headers = email.message.Message()
         error_headers["WWW-Authenticate"] = 'Bearer realm="mcp", scope="read"'
         unauthorized = urllib.error.HTTPError(
-            spec.url, 401, "Unauthorized", error_headers, io.BytesIO(b""),
+            url=server_url, code=401, msg="Unauthorized", hdrs=error_headers, fp=io.BytesIO(b""),
         )
         with patch("backend.mcp_stdio.resolve_public_addresses", return_value=((2, 1, 6, ("93.184.216.34", 443)),)), \
              patch("backend.mcp_stdio.open_provider_request", side_effect=[unauthorized, response]) as opener, \
@@ -189,6 +190,7 @@ class MCPTransportOAuthTests(unittest.TestCase):
             client.era = "modern"
             result = client._post({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}, 1)
 
+        assert result is not None
         self.assertEqual(result["result"]["content"], [])
         self.assertEqual(opener.call_count, 2)
         self.assertEqual(opener.call_args.args[0].get_header("Authorization"), "Bearer oauth-secret")
@@ -197,14 +199,17 @@ class MCPTransportOAuthTests(unittest.TestCase):
         self.assertEqual(client._redact("oauth-secret"), "[redacted]")
 
     def test_insufficient_scope_challenge_reauthorizes_and_retries_once(self):
-        spec = MCPServerSpec("remote", None, (), {}, "https://mcp.example.test/mcp", {}, "client")
+        server_url = "https://mcp.example.test/mcp"
+        spec = MCPServerSpec("remote", None, (), {}, server_url, {}, "client")
         response = MagicMock()
         response.read.return_value = b'{"jsonrpc":"2.0","id":1,"result":{}}'
         response.__enter__.return_value = response
         response.headers = {"Content-Type": "application/json"}
         error_headers = email.message.Message()
         error_headers["WWW-Authenticate"] = 'Bearer error="insufficient_scope", scope="files:read files:write"'
-        forbidden = urllib.error.HTTPError(spec.url, 403, "Forbidden", error_headers, io.BytesIO(b""))
+        forbidden = urllib.error.HTTPError(
+            url=server_url, code=403, msg="Forbidden", hdrs=error_headers, fp=io.BytesIO(b""),
+        )
         with patch("backend.mcp_stdio.resolve_public_addresses", return_value=((2, 1, 6, ("93.184.216.34", 443)),)), \
              patch("backend.mcp_stdio.open_provider_request", side_effect=[forbidden, response]), \
              patch("backend.mcp_stdio.oauth_access_token", return_value="new-scope-token") as oauth:
@@ -213,6 +218,7 @@ class MCPTransportOAuthTests(unittest.TestCase):
             client._oauth_authorized = True
             client._set_oauth_token("old-scope-token")
             result = client._post({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}, 1)
+        assert result is not None
         self.assertEqual(result["result"], {})
         self.assertTrue(any(call.kwargs.get("force_reauthorize") is True for call in oauth.call_args_list))
         self.assertTrue(any("files:write" in str(call.args[1]) for call in oauth.call_args_list if len(call.args) > 1))

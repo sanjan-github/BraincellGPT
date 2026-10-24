@@ -39,6 +39,8 @@ class ImageInputTests(unittest.TestCase):
         image = normalize_images([data_url()])
         openai = openai_content("describe", image)
         anthropic = anthropic_content("describe", image)
+        assert isinstance(openai, list)
+        assert isinstance(anthropic, list)
         self.assertEqual(openai[0], {"type": "text", "text": "describe"})
         self.assertTrue(openai[1]["image_url"]["url"].startswith("data:image/png;base64,"))
         self.assertEqual(anthropic[1]["type"], "image")

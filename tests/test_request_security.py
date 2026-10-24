@@ -61,6 +61,33 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_chat_api_accepts_images_and_converts_them_once(self):
+        import base64
+
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nimage").decode("ascii")
+        provider_response = MagicMock()
+        provider_response.read.return_value = b'{"choices":[{"message":{"content":"An image."}}]}'
+        provider_response.__enter__.return_value = provider_response
+        try:
+            with patch("app.PORT", self.server.server_port), \
+                 patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}), \
+                 patch("app.open_provider_request", return_value=provider_response) as opener:
+                connection.request(
+                    "POST", "/api/chat",
+                    body=json.dumps({"message": "describe", "provider": "groq", "images": [image]}),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                result = json.loads(response.read().decode())
+            self.assertEqual(response.status, 200)
+            self.assertEqual(result["reply"], "An image.")
+            user_content = json.loads(opener.call_args.args[0].data.decode())["messages"][-1]["content"]
+            self.assertEqual(user_content[0], {"type": "text", "text": "describe"})
+            self.assertEqual(user_content[1]["type"], "image_url")
+        finally:
+            connection.close()
+
     def test_oauth_loopback_callback_accepts_state_bound_cross_site_redirect(self):
         state = "oauth-test-state"
         mcp_oauth._PENDING[state] = mcp_oauth._PendingAuthorization(

@@ -16,6 +16,7 @@ from collections import defaultdict, deque
 from threading import Lock
 import time
 import re
+from typing import Any
 from backend.agent import restore_checkpoint, restore_checkpoint_group, run_agent
 from backend.agent_approvals import get_approval_registry
 from backend.mcp_stdio import MCPToolRouter, load_server_specs
@@ -278,7 +279,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         raise RuntimeError("Provider settings are too long.")
     system_text = build_system_prompt(personality)
     image_parts = normalize_images(images)
-    messages = [{"role": "system", "content": system_text}]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system_text}]
     for item in trim_history(history):
         messages.append(item)
     user_content = anthropic_content(message, image_parts) if protocol == "anthropic" else openai_content(message, image_parts)
@@ -495,6 +496,159 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _handle_profile_secret_post(self, payload: dict) -> None:
+        profile_id = payload.get("profile_id", "")
+        api_key = payload.get("api_key", "")
+        if not isinstance(profile_id, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{8,80}", profile_id):
+            self.send_json(400, {"error": "Invalid profile ID."})
+            return
+        if not isinstance(api_key, str) or len(api_key) > 500:
+            self.send_json(400, {"error": "API key is too long or invalid."})
+            return
+        with _profile_secrets_lock:
+            if api_key.strip():
+                _profile_secrets[profile_id] = api_key.strip()
+            else:
+                _profile_secrets.pop(profile_id, None)
+        self.send_json(200, {"ok": True, "configured": bool(api_key.strip())})
+
+    def _handle_mcp_disconnect_post(self, payload: dict) -> None:
+        server_name = payload.get("server", "")
+        if not isinstance(server_name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", server_name):
+            self.send_json(400, {"error": "Provide a valid configured MCP server name."})
+            return
+        try:
+            server = next((item for item in load_server_specs(dict(os.environ)) if item.name == server_name and item.url), None)
+        except ValueError as exc:
+            self.send_json(400, {"error": str(exc)})
+            return
+        if server is None:
+            self.send_json(404, {"error": "Configured remote MCP server was not found."})
+            return
+        server_url = server.url
+        if server_url is None:
+            self.send_json(404, {"error": "Configured remote MCP server was not found."})
+            return
+        persistent = forget_mcp_oauth_server(server_url)
+        self.send_json(200, {"disconnected": True, "persistent_credentials_cleared": persistent})
+
+    def _handle_agent_approval_post(self, payload: dict) -> None:
+        approval_id = payload.get("approval_id", "")
+        session_id = payload.get("session_id", "")
+        decision = payload.get("decision", "")
+        if not isinstance(approval_id, str) or not isinstance(session_id, str) or decision not in ("approve", "reject"):
+            self.send_json(400, {"error": "Provide an approval ID, session ID, and approve/reject decision."})
+            return
+        store = get_agent_store()
+        session_id = store.validate_session_id(session_id)
+        session = store.get_session(session_id)
+        if not session or Path(session["workspace"]).resolve() != ROOT.resolve():
+            self.send_json(404, {"error": "Agent session not found."})
+            return
+        resolved = get_approval_registry().resolve(approval_id, session_id, decision == "approve")
+        if not resolved:
+            self.send_json(404, {"error": "Pending approval was not found or has already been resolved."})
+            return
+        self.send_json(200, {"resolved": True, "decision": decision})
+
+    def _handle_agent_restore_post(self, payload: dict) -> None:
+        if payload.get("allow_edits") is not True:
+            self.send_json(403, {"error": "Restoring a checkpoint requires edits to be enabled for this request."})
+            return
+        session_id = payload.get("session_id", "")
+        group_id = payload.get("group_id")
+        if group_id is not None:
+            result = restore_checkpoint_group(session_id, group_id, ROOT)
+        else:
+            checkpoint_id = payload.get("checkpoint_id", "")
+            result = restore_checkpoint(session_id, checkpoint_id, ROOT)
+        self.send_json(200, result)
+
+    def _handle_agent_post(self, route: str, payload: dict) -> None:
+        environ = dict(os.environ)
+        task = payload.get("task", "")
+        if not isinstance(task, str) or not task.strip() or len(task) > 12000:
+            self.send_json(400, {"error": "Provide a task up to 12,000 characters."})
+            return
+        try:
+            images = normalize_images(payload.get("images"))
+        except ValueError as exc:
+            self.send_json(400, {"error": str(exc)})
+            return
+        provider = payload.get("provider", "") if isinstance(payload.get("provider", ""), str) else ""
+        base_url = payload.get("base_url", "") if isinstance(payload.get("base_url", ""), str) else ""
+        model = payload.get("model", "") if isinstance(payload.get("model", ""), str) else ""
+        mode = payload.get("mode", "") if isinstance(payload.get("mode", ""), str) else ""
+        supplied_session_id = payload.get("session_id", "")
+        profile_id = payload.get("profile_id", "")
+        with _profile_secrets_lock:
+            saved_key = _profile_secrets.get(profile_id, "") if isinstance(profile_id, str) else ""
+        store = get_agent_store()
+        if supplied_session_id:
+            session_id = store.validate_session_id(supplied_session_id)
+            session = store.get_session(session_id)
+            if not session or Path(session["workspace"]).resolve() != ROOT.resolve():
+                self.send_json(404, {"error": "Agent session not found."})
+                return
+            provider = provider or session["provider"]
+            base_url = base_url or session["base_url"]
+            model = model or session["model"]
+            mode = mode or session["mode"]
+            history = store.history(session_id)
+        else:
+            provider = provider or "groq"
+            mode = mode or "code"
+            session_id = store.create_session(str(ROOT.resolve()), provider, base_url, model, mode, task.strip())
+            history = payload.get("history", [])
+            if not isinstance(history, list):
+                history = []
+        store.add_turn(session_id, "user", task.strip())
+        mcp_router = None
+        try:
+            streaming = route == "/api/agent/stream"
+            callback = None
+            approval_callback = None
+            if streaming:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Connection", "close")
+                self.send_header("X-Accel-Buffering", "no")
+                self.close_connection = True
+                self.end_headers()
+                self._post_stream_started = True
+                self.send_sse_event({"type": "start", "session_id": session_id})
+                callback = self.send_sse_event
+                approval_callback = lambda event: get_approval_registry().request(session_id, event, callback)
+                mcp_router = MCPToolRouter(environ, ROOT, callback, oauth_port=PORT)
+            result = run_agent(
+                task.strip(), history, ROOT, provider, saved_key, base_url, model, environ,
+                allow_edits=payload.get("allow_edits") is True,
+                allow_commands=payload.get("allow_commands") is True,
+                mode=mode,
+                session_id=session_id,
+                event_callback=callback,
+                approval_callback=approval_callback,
+                mcp_router=mcp_router,
+                images=payload.get("images"),
+            )
+        except (RuntimeError, ValueError) as exc:
+            store.add_turn(session_id, "assistant", str(exc), {"error": True})
+            raise
+        finally:
+            if mcp_router is not None:
+                mcp_router.close()
+        result["session_id"] = session_id
+        store.update_session(session_id, provider=provider, base_url=base_url, model=model, mode=result.get("mode", mode))
+        metadata = {key: value for key, value in result.items() if key not in {"reply", "session_id"}}
+        store.add_turn(session_id, "assistant", str(result.get("reply", "")), metadata)
+        if streaming:
+            self.send_sse_event({"type": "done", "result": result})
+        else:
+            self.send_json(200, result)
+        return
+
+
     def do_POST(self) -> None:
         route = urlparse(self.path).path
         if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/agent", "/api/agent/stream", "/api/agent/approvals", "/api/agent/restore", "/api/mcp/oauth/disconnect"):
@@ -509,7 +663,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
             self.send_json(415, {"error": "Content-Type must be application/json."})
             return
-        stream_started = False
+        self._post_stream_started = False
         try:
             length = int(self.headers.get("Content-Length", "0"))
             max_body_bytes = 12_000_000 if route in ("/api/chat", "/api/agent", "/api/agent/stream") else 200_000
@@ -521,150 +675,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(400, {"error": "Request body must be a JSON object."})
                 return
             if route == "/api/profile-secret":
-                profile_id = payload.get("profile_id", "")
-                api_key = payload.get("api_key", "")
-                if not isinstance(profile_id, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{8,80}", profile_id):
-                    self.send_json(400, {"error": "Invalid profile ID."})
-                    return
-                if not isinstance(api_key, str) or len(api_key) > 500:
-                    self.send_json(400, {"error": "API key is too long or invalid."})
-                    return
-                with _profile_secrets_lock:
-                    if api_key.strip():
-                        _profile_secrets[profile_id] = api_key.strip()
-                    else:
-                        _profile_secrets.pop(profile_id, None)
-                self.send_json(200, {"ok": True, "configured": bool(api_key.strip())})
+                self._handle_profile_secret_post(payload)
                 return
             if route == "/api/mcp/oauth/disconnect":
-                server_name = payload.get("server", "")
-                if not isinstance(server_name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", server_name):
-                    self.send_json(400, {"error": "Provide a valid configured MCP server name."})
-                    return
-                try:
-                    server = next((item for item in load_server_specs(os.environ) if item.name == server_name and item.url), None)
-                except ValueError as exc:
-                    self.send_json(400, {"error": str(exc)})
-                    return
-                if server is None:
-                    self.send_json(404, {"error": "Configured remote MCP server was not found."})
-                    return
-                persistent = forget_mcp_oauth_server(server.url)
-                self.send_json(200, {"disconnected": True, "persistent_credentials_cleared": persistent})
+                self._handle_mcp_disconnect_post(payload)
                 return
             if route == "/api/agent/approvals":
-                approval_id = payload.get("approval_id", "")
-                session_id = payload.get("session_id", "")
-                decision = payload.get("decision", "")
-                if not isinstance(approval_id, str) or not isinstance(session_id, str) or decision not in ("approve", "reject"):
-                    self.send_json(400, {"error": "Provide an approval ID, session ID, and approve/reject decision."})
-                    return
-                store = get_agent_store()
-                session_id = store.validate_session_id(session_id)
-                session = store.get_session(session_id)
-                if not session or Path(session["workspace"]).resolve() != ROOT.resolve():
-                    self.send_json(404, {"error": "Agent session not found."})
-                    return
-                resolved = get_approval_registry().resolve(approval_id, session_id, decision == "approve")
-                if not resolved:
-                    self.send_json(404, {"error": "Pending approval was not found or has already been resolved."})
-                    return
-                self.send_json(200, {"resolved": True, "decision": decision})
+                self._handle_agent_approval_post(payload)
                 return
             if route in ("/api/agent", "/api/agent/stream"):
-                task = payload.get("task", "")
-                if not isinstance(task, str) or not task.strip() or len(task) > 12000:
-                    self.send_json(400, {"error": "Provide a task up to 12,000 characters."})
-                    return
-                try:
-                    images = normalize_images(payload.get("images"))
-                except ValueError as exc:
-                    self.send_json(400, {"error": str(exc)})
-                    return
-                provider = payload.get("provider", "") if isinstance(payload.get("provider", ""), str) else ""
-                base_url = payload.get("base_url", "") if isinstance(payload.get("base_url", ""), str) else ""
-                model = payload.get("model", "") if isinstance(payload.get("model", ""), str) else ""
-                mode = payload.get("mode", "") if isinstance(payload.get("mode", ""), str) else ""
-                supplied_session_id = payload.get("session_id", "")
-                profile_id = payload.get("profile_id", "")
-                with _profile_secrets_lock:
-                    saved_key = _profile_secrets.get(profile_id, "") if isinstance(profile_id, str) else ""
-                store = get_agent_store()
-                if supplied_session_id:
-                    session_id = store.validate_session_id(supplied_session_id)
-                    session = store.get_session(session_id)
-                    if not session or Path(session["workspace"]).resolve() != ROOT.resolve():
-                        self.send_json(404, {"error": "Agent session not found."})
-                        return
-                    provider = provider or session["provider"]
-                    base_url = base_url or session["base_url"]
-                    model = model or session["model"]
-                    mode = mode or session["mode"]
-                    history = store.history(session_id)
-                else:
-                    provider = provider or "groq"
-                    mode = mode or "code"
-                    session_id = store.create_session(str(ROOT.resolve()), provider, base_url, model, mode, task.strip())
-                    history = payload.get("history", [])
-                    if not isinstance(history, list):
-                        history = []
-                store.add_turn(session_id, "user", task.strip())
-                mcp_router = None
-                try:
-                    streaming = route == "/api/agent/stream"
-                    callback = None
-                    approval_callback = None
-                    if streaming:
-                        self.send_response(200)
-                        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-                        self.send_header("Cache-Control", "no-store")
-                        self.send_header("Connection", "close")
-                        self.send_header("X-Accel-Buffering", "no")
-                        self.close_connection = True
-                        self.end_headers()
-                        stream_started = True
-                        self.send_sse_event({"type": "start", "session_id": session_id})
-                        callback = self.send_sse_event
-                        approval_callback = lambda event: get_approval_registry().request(session_id, event, callback)
-                        mcp_router = MCPToolRouter(os.environ, ROOT, callback, oauth_port=PORT)
-                    result = run_agent(
-                        task.strip(), history, ROOT, provider, saved_key, base_url, model, os.environ,
-                        allow_edits=payload.get("allow_edits") is True,
-                        allow_commands=payload.get("allow_commands") is True,
-                        mode=mode,
-                        session_id=session_id,
-                        event_callback=callback,
-                        approval_callback=approval_callback,
-                        mcp_router=mcp_router,
-                        images=payload.get("images"),
-                    )
-                except (RuntimeError, ValueError) as exc:
-                    store.add_turn(session_id, "assistant", str(exc), {"error": True})
-                    raise
-                finally:
-                    if mcp_router is not None:
-                        mcp_router.close()
-                result["session_id"] = session_id
-                store.update_session(session_id, provider=provider, base_url=base_url, model=model, mode=result.get("mode", mode))
-                metadata = {key: value for key, value in result.items() if key not in {"reply", "session_id"}}
-                store.add_turn(session_id, "assistant", str(result.get("reply", "")), metadata)
-                if streaming:
-                    self.send_sse_event({"type": "done", "result": result})
-                else:
-                    self.send_json(200, result)
+                self._handle_agent_post(route, payload)
                 return
             if route == "/api/agent/restore":
-                if payload.get("allow_edits") is not True:
-                    self.send_json(403, {"error": "Restoring a checkpoint requires edits to be enabled for this request."})
-                    return
-                session_id = payload.get("session_id", "")
-                group_id = payload.get("group_id")
-                if group_id is not None:
-                    result = restore_checkpoint_group(session_id, group_id, ROOT)
-                else:
-                    checkpoint_id = payload.get("checkpoint_id", "")
-                    result = restore_checkpoint(session_id, checkpoint_id, ROOT)
-                self.send_json(200, result)
+                self._handle_agent_restore_post(payload)
                 return
             message = str(payload.get("message", "")).strip()
             if route == "/api/test-connection":
@@ -679,11 +702,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(history, list):
                 history = []
             history = trim_history(history)
-            try:
-                images = normalize_images(payload.get("images")) if route == "/api/chat" else []
-            except ValueError as exc:
-                self.send_json(400, {"error": str(exc)})
-                return
+            images = payload.get("images") if route == "/api/chat" else None
             def text_field(name: str, default: str = "") -> str:
                 value = payload.get(name, default)
                 return value if isinstance(value, str) else default
@@ -703,24 +722,24 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_json(200, {"reply": reply})
         except json.JSONDecodeError:
-            if stream_started:
+            if self._post_stream_started:
                 self.send_sse_event({"type": "error", "error": "Invalid JSON request."})
             else:
                 self.send_json(400, {"error": "Invalid JSON request."})
         except RuntimeError as exc:
-            if stream_started:
+            if self._post_stream_started:
                 self.send_sse_event({"type": "error", "error": str(exc)})
             else:
                 self.send_json(502, {"error": str(exc)})
         except ValueError as exc:
-            if stream_started:
+            if self._post_stream_started:
                 self.send_sse_event({"type": "error", "error": str(exc)})
             else:
                 self.send_json(400, {"error": str(exc)})
         except Exception as exc:
             # Log the exception type for diagnosis without returning internals to clients.
             print(f"[BrainCellGPT] request failed: {type(exc).__name__}")
-            if stream_started:
+            if self._post_stream_started:
                 self.send_sse_event({"type": "error", "error": "Unexpected server error. Check the terminal for details."})
             else:
                 self.send_json(500, {"error": "Unexpected server error. Check the terminal for details."})
