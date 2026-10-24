@@ -25,6 +25,8 @@ from backend.provider_http import MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROV
 MAX_FILE_BYTES = 200_000
 MAX_TOOL_RESULT = 24_000
 MAX_STEPS = 8
+MAX_AGENT_CONTEXT_CHARS = 96_000
+MAX_RETAINED_TOOL_RESULT_CHARS = 10_000
 MAX_PROVIDER_RESPONSE_BYTES = SHARED_MAX_PROVIDER_RESPONSE_BYTES
 _PROVIDER_SLOTS = PROVIDER_SLOTS
 MAX_COMMAND_SECONDS = 60
@@ -632,6 +634,28 @@ def _agent_system(mode: str, allow_edits: bool, allow_commands: bool) -> str:
     )
 
 
+def _bound_agent_messages(messages: list[dict]) -> list[dict]:
+    """Keep a bounded prompt while removing complete oldest tool exchanges."""
+    def size() -> int:
+        return sum(len(json.dumps(message, ensure_ascii=False)) for message in messages)
+
+    while len(messages) > 2 and size() > MAX_AGENT_CONTEXT_CHARS:
+        first = messages[1]
+        end = 2
+        if first.get("role") == "assistant" and first.get("tool_calls"):
+            while end < len(messages) and messages[end].get("role") == "tool":
+                end += 1
+        del messages[1:end]
+
+    if size() > MAX_AGENT_CONTEXT_CHARS:
+        for message in messages:
+            if message.get("role") == "tool" and isinstance(message.get("content"), str):
+                message["content"] = message["content"][:MAX_RETAINED_TOOL_RESULT_CHARS] + "\n[older tool output truncated]"
+                if size() <= MAX_AGENT_CONTEXT_CHARS:
+                    break
+    return messages
+
+
 def _provider(provider: str, api_key: str, base_url: str, model: str, environ: dict[str, str]):
     registry = {
         "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "GROQ_API_KEY", "GROQ_MODEL"),
@@ -735,8 +759,10 @@ def run_agent(
         history_chars += len(content)
     messages.append({"role": "user", "content": task[:12000]})
     tool_calls_made = 0
+    executed_mutations: set[str] = set()
     todos: list[str] = []
     for _ in range(MAX_STEPS):
+        _bound_agent_messages(messages)
         active_tools = tools_for_mode(mode, allow_edits, allow_commands)
         if provider == "anthropic":
             payload = _anthropic_payload(model_name, messages, active_tools, 1800)
@@ -812,7 +838,11 @@ def run_agent(
         for call, name, args in validated_calls:
             if event_callback is not None:
                 event_callback({"type": "tool_start", "name": name, "id": call["id"]})
-            if name == "new_task":
+            signature = json.dumps([name, args], sort_keys=True, separators=(",", ":"))
+            mutating = name in {"write_file", "search_replace", "apply_diff", "execute_command"}
+            if mutating and signature in executed_mutations:
+                result = json.dumps({"error": "Repeated identical mutating tool call was blocked to prevent an accidental loop."})
+            elif name == "new_task":
                 subtask = args.get("task")
                 if mode != "orchestrator" or _subtask_depth >= 2:
                     result = json.dumps({"error": "Subtask delegation is unavailable or has reached its depth limit."})
@@ -830,6 +860,8 @@ def run_agent(
                     except (RuntimeError, ValueError) as exc:
                         result = json.dumps({"error": str(exc)})
             else:
+                if mutating:
+                    executed_mutations.add(signature)
                 result = run_tool(name, args, root, allow_edits, allow_commands, mode, session_id)
             if event_callback is not None:
                 try:

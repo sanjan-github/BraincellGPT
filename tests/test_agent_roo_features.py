@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from backend.agent import (
+    _bound_agent_messages,
     _anthropic_assistant,
     _anthropic_payload,
     _provider,
@@ -206,6 +207,47 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertIn("Current mode: Ask", second_payload["messages"][0]["content"])
         self.assertNotIn("write_file", {tool["function"]["name"] for tool in second_payload["tools"]})
         self.assertNotIn("execute_command", {tool["function"]["name"] for tool in second_payload["tools"]})
+
+    def test_context_budget_drops_complete_old_tool_exchange(self):
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "old"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "t1"}]},
+            {"role": "tool", "tool_call_id": "t1", "content": "x" * 200},
+            {"role": "user", "content": "current"},
+        ]
+        with patch("backend.agent.MAX_AGENT_CONTEXT_CHARS", 180):
+            bounded = _bound_agent_messages(messages)
+        self.assertEqual(bounded[0]["role"], "system")
+        self.assertEqual(bounded[-1]["content"], "current")
+        self.assertFalse(any(message.get("role") == "tool" for message in bounded))
+
+    def test_repeated_identical_mutating_call_is_blocked(self):
+        def tool_response(call_id):
+            response = MagicMock()
+            response.read.return_value = json.dumps({"choices": [{"message": {
+                "content": None,
+                "tool_calls": [{"id": call_id, "type": "function", "function": {
+                    "name": "write_file", "arguments": '{"path":"created.txt","content":"safe"}',
+                }}],
+            }}]}).encode()
+            response.__enter__.return_value = response
+            return response
+
+        final_response = MagicMock()
+        final_response.read.return_value = b'{"choices":[{"message":{"content":"Finished."}}]}'
+        final_response.__enter__.return_value = final_response
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("backend.agent.open_provider_request", side_effect=[tool_response("one"), tool_response("two"), final_response]) as opener:
+                result = run_agent(
+                    "create the file", [], root, "groq", "api-key", "", "", {},
+                    allow_edits=True, mode="code",
+                )
+            second_tool_result = json.loads(opener.call_args_list[2].args[0].data.decode())["messages"][-1]["content"]
+            self.assertIn("Repeated identical mutating", second_tool_result)
+            self.assertEqual((root / "created.txt").read_text(encoding="utf-8"), "safe")
+            self.assertEqual(result["reply"], "Finished.")
 
 
 if __name__ == "__main__":
