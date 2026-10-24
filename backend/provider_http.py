@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import http.client
+import json
 import ipaddress
 import socket
 import ssl
@@ -12,6 +13,26 @@ from threading import BoundedSemaphore
 # One process-wide cap shared by chat and coding-agent provider requests.
 MAX_CONCURRENT_PROVIDER_REQUESTS = 8
 PROVIDER_SLOTS = BoundedSemaphore(MAX_CONCURRENT_PROVIDER_REQUESTS)
+MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
+
+
+class ProviderResponseTooLarge(ValueError):
+    """The model provider returned more data than the configured limit."""
+
+
+class ProviderInvalidJSON(ValueError):
+    """The model provider returned a body that is not valid UTF-8 JSON."""
+
+
+def read_provider_json(response, max_bytes: int = MAX_PROVIDER_RESPONSE_BYTES):
+    """Read and decode a bounded JSON response shared by chat and agent flows."""
+    raw = response.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise ProviderResponseTooLarge("Provider response exceeded the configured size limit.")
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProviderInvalidJSON("Provider returned invalid JSON.") from exc
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
