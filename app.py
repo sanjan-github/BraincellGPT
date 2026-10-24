@@ -17,7 +17,7 @@ from threading import Lock
 import time
 import re
 from backend.agent import run_agent
-from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, PROVIDER_SLOTS, open_provider_request, resolve_public_addresses
+from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
@@ -32,7 +32,7 @@ _rate_lock = Lock()
 _profile_secrets: dict[str, str] = {}
 _profile_secrets_lock = Lock()
 MAX_RATE_BUCKETS = 2048
-MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
+MAX_PROVIDER_RESPONSE_BYTES = SHARED_MAX_PROVIDER_RESPONSE_BYTES
 _provider_slots = PROVIDER_SLOTS
 
 
@@ -210,13 +210,12 @@ def extract_provider_reply(data: object, protocol: str, label: str) -> str:
 
 
 def _read_provider_json(response, label: str) -> object:
-    """Read a bounded provider response and parse JSON."""
-    raw = response.read(MAX_PROVIDER_RESPONSE_BYTES + 1)
-    if len(raw) > MAX_PROVIDER_RESPONSE_BYTES:
-        raise RuntimeError(label + " returned a response larger than the 2 MB limit.")
+    """Read shared bounded provider JSON and map errors to chat-facing messages."""
     try:
-        return json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return read_provider_json(response, MAX_PROVIDER_RESPONSE_BYTES)
+    except ProviderResponseTooLarge as exc:
+        raise RuntimeError(label + " returned a response larger than the 2 MB limit.") from exc
+    except ProviderInvalidJSON as exc:
         raise RuntimeError(label + " returned an invalid JSON response.") from exc
 
 
