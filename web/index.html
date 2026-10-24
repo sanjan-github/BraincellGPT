@@ -519,12 +519,13 @@ button:active {
 .globe-wrapper:active {
   cursor: grabbing;
 }
+.globe-wrapper:focus-visible { outline: 2px solid rgba(190, 212, 230, 0.75); outline-offset: 5px; }
 
 #globeCanvas {
   width: 200px;
   height: 200px;
   border-radius: 50%;
-  filter: drop-shadow(0 0 32px rgba(0, 132, 255, 0.45));
+  filter: drop-shadow(0 8px 18px rgba(0, 22, 48, 0.38));
 }
 
 .hero-title-main {
@@ -956,6 +957,109 @@ button:active {
     font-size: var(--text-subhead);
   }
 }
+
+/* A quieter, more editorial surface: let the Earth and conversation carry the page. */
+:root {
+  --color-base: #07090d;
+  --color-sidebar: #090c11;
+  --color-surface: transparent;
+  --color-surface-hover: rgba(255, 255, 255, 0.045);
+  --color-border: rgba(220, 231, 244, 0.09);
+  --color-border-hover: rgba(220, 231, 244, 0.2);
+  --color-accent: #9bbad4;
+  --color-accent-hover: #c5d9e9;
+  --color-accent-text: #08111a;
+  --text-primary: #f1f2f4;
+  --text-secondary: #9ba4b1;
+  --text-tertiary: #6e7784;
+  --composer-bg: transparent;
+}
+
+.app-shell { padding: 0; gap: 0; }
+.sidebar {
+  background: var(--color-sidebar);
+  border: 0;
+  border-right: 1px solid rgba(220, 231, 244, 0.07);
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 22px 16px 16px;
+}
+.sidebar-header { border-bottom-color: rgba(220, 231, 244, 0.07); padding-bottom: 16px; }
+.brand-icon { color: #91abc0; }
+.btn-new-chat {
+  justify-content: flex-start;
+  margin-top: 18px;
+  padding: 10px 2px;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: #e5e7eb;
+  font-weight: 500;
+}
+.btn-new-chat:hover { background: transparent; color: #fff; border-color: var(--color-border-hover); }
+.search-chats-bar {
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 2px;
+}
+.history-item { border: 0; border-left: 2px solid transparent; border-radius: 0; padding-left: 10px; }
+.history-item:hover, .history-item.active { background: rgba(255, 255, 255, 0.035); }
+.history-item.active { border-left-color: #91abc0; }
+.sidebar-user-pill { background: transparent; border: 0; border-top: 1px solid var(--color-border); border-radius: 0; padding: 14px 2px 0; }
+.btn-sidebar-toggle, .icon-btn-pill {
+  background: transparent;
+  border: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  color: #aab2bd;
+}
+.btn-sidebar-toggle:hover, .icon-btn-pill:hover { background: rgba(255, 255, 255, 0.055); border: 0; color: #fff; }
+.active-provider-pill { border: 0; padding-inline: 4px; }
+.status-beacon { background: #84a98c; box-shadow: none; }
+.globe-wrapper { width: 232px; height: 232px; margin-bottom: 6px; }
+#globeCanvas { width: 232px; height: 232px; }
+.hero-title-main { font-size: clamp(31px, 4vw, 42px); font-weight: 620; letter-spacing: -0.045em; text-shadow: none; }
+.hero-caption { color: #9da8b5; text-shadow: none; letter-spacing: 0.01em; margin-bottom: 32px; }
+.composer-container {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid rgba(220, 231, 244, 0.16);
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 14px 0 8px;
+}
+.composer-container:focus-within { border-color: rgba(220, 231, 244, 0.3); box-shadow: none; }
+.composer-textarea { min-height: 64px; }
+.composer-bottom-bar { border-top: 0; padding-top: 4px; }
+.btn-submit-pill { border-radius: 50%; background: #d7e0e8; box-shadow: none; }
+.btn-submit-pill:hover:not(:disabled) { background: #fff; box-shadow: none; }
+.user-message-panel {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid rgba(220, 231, 244, 0.2);
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.assistant-message-panel { background: transparent; border: 0; border-radius: 0; padding-inline: 0; }
+.thinking-notice { background: transparent; border: 0; border-radius: 0; padding-inline: 0; }
+.thinking-dot { background: #9bbad4; box-shadow: none; }
+.drawer-panel { box-shadow: -14px 0 36px rgba(0, 0, 0, 0.24); }
+
+@media (max-width: 768px) {
+  .sidebar { border-right: 0; }
+  .sidebar.mobile-open { box-shadow: 12px 0 30px rgba(0, 0, 0, 0.3); }
+  .globe-wrapper, #globeCanvas { width: 204px; height: 204px; }
+  .hero-title-main { font-size: 30px; }
+}
 </style>
 </head>
 <body>
@@ -1045,7 +1149,7 @@ button:active {
         <!-- Welcome Stage -->
         <div class="hero-stage" id="welcome">
           <!-- Real 3D Earth Globe Canvas -->
-          <div class="globe-wrapper" id="globeTrigger" title="Drag to freely rotate Earth and space in any direction">
+          <div class="globe-wrapper" id="globeTrigger" role="group" tabindex="0" aria-label="Interactive Earth globe. Drag or use the arrow keys to rotate.">
             <canvas id="globeCanvas" width="360" height="360"></canvas>
           </div>
 
@@ -1534,7 +1638,7 @@ let spaceAngleY = 0;
     initStars();
   });
 
-  const STAR_COUNT = 1000;
+  const STAR_COUNT = 150;
   const stars = [];
 
   function initStars() {
@@ -1544,8 +1648,8 @@ let spaceAngleY = 0;
         x: (Math.random() - 0.5) * spaceW * 2.5,
         y: (Math.random() - 0.5) * spaceH * 2.5,
         z: Math.random() * 900 + 100,
-        size: Math.random() * 1.6 + 0.4,
-        baseAlpha: Math.random() * 0.7 + 0.3,
+        size: Math.random() * 0.7 + 0.25,
+        baseAlpha: Math.random() * 0.22 + 0.08,
         twinkleSpeed: Math.random() * 0.02 + 0.005,
         twinklePhase: Math.random() * Math.PI * 2,
         hue: Math.random() < 0.25 ? 210 : Math.random() < 0.1 ? 35 : 0
@@ -1554,11 +1658,7 @@ let spaceAngleY = 0;
   }
   initStars();
 
-  const nebulae = [
-    { x: -spaceW * 0.3, y: -spaceH * 0.25, r: 520, color: "rgba(45, 22, 75, 0.25)" },
-    { x: spaceW * 0.35, y: spaceH * 0.3, r: 600, color: "rgba(18, 35, 75, 0.22)" },
-    { x: 0, y: -spaceH * 0.45, r: 440, color: "rgba(25, 45, 65, 0.18)" }
-  ];
+  const nebulae = [];
 
   function renderSpace() {
     sCtx.fillStyle = "#05070D";
@@ -1595,8 +1695,8 @@ let spaceAngleY = 0;
 
       if (px < -20 || px > spaceW + 20 || py < -20 || py > spaceH + 20) continue;
 
-      const twinkle = Math.sin(time * s.twinkleSpeed * 60 + s.twinklePhase) * 0.25;
-      const alpha = Math.max(0.15, Math.min(1, s.baseAlpha + twinkle));
+      const twinkle = Math.sin(time * s.twinkleSpeed * 60 + s.twinklePhase) * 0.06;
+      const alpha = Math.max(0.025, Math.min(0.32, s.baseAlpha + twinkle));
 
       sCtx.beginPath();
       sCtx.arc(px, py, s.size, 0, Math.PI * 2);
@@ -1753,8 +1853,8 @@ let spaceAngleY = 0;
       
       // Atmospheric Fresnel Blue Rim Glow (Like the reference photo)
       float fresnel = 1.0 - max(dot(normal, view), 0.0);
-      float atmo = pow(fresnel, 2.4) * 0.85;
-      vec3 atmoCol = vec3(0.18, 0.58, 1.0) * atmo;
+      float atmo = pow(fresnel, 3.4) * 0.24;
+      vec3 atmoCol = vec3(0.18, 0.42, 0.68) * atmo;
       
       // Ocean Specular Glint
       vec3 reflectDir = reflect(-light, normal);
@@ -1856,14 +1956,13 @@ let spaceAngleY = 0;
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  // Asynchronously enhance with high-res NASA satellite texture if available
+  // Use the bundled NASA Blue Marble texture so it works offline and within CSP.
   const nasaImg = new Image();
-  nasaImg.crossOrigin = "anonymous";
   nasaImg.onload = () => {
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, nasaImg);
   };
-  nasaImg.src = "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_atmos_2048.jpg";
+  nasaImg.src = "/assets/earth-blue-marble.jpg";
 
   const uMatrixLoc = gl.getUniformLocation(program, "uMatrix");
   const uRotLoc = gl.getUniformLocation(program, "uRotation");
@@ -1966,6 +2065,21 @@ let spaceAngleY = 0;
   globeWrapper.addEventListener("pointerdown", onPointerDown);
   window.addEventListener("pointermove", onPointerMove);
   window.addEventListener("pointerup", onPointerUp);
+  globeWrapper.addEventListener("keydown", (event) => {
+    const keyRotations = {
+      ArrowLeft: [0, 1, 0, 0.12],
+      ArrowRight: [0, 1, 0, -0.12],
+      ArrowUp: [1, 0, 0, 0.12],
+      ArrowDown: [1, 0, 0, -0.12]
+    };
+    const rotation = keyRotations[event.key];
+    if (!rotation) return;
+    event.preventDefault();
+    const delta = quatFromAxisAngle(rotation.slice(0, 3), rotation[3]);
+    currentQuat = quatMultiply(delta, currentQuat);
+    velX = 0;
+    velY = 0;
+  });
 
   function renderEarth() {
     gl.viewport(0, 0, canvas.width, canvas.height);

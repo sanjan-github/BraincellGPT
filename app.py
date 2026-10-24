@@ -394,11 +394,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        content_type = "text/html; charset=utf-8"
         if path in ("/", "/index.html"):
             if not self.is_trusted_local_request():
                 self.send_json(403, {"error": "Untrusted Host or Origin."})
                 return
             file_path = WEB_DIR / "index.html"
+        elif path == "/assets/earth-blue-marble.jpg":
+            if not self.is_trusted_local_request():
+                self.send_json(403, {"error": "Untrusted Host or Origin."})
+                return
+            file_path = WEB_DIR / "assets" / "earth-blue-marble.jpg"
+            content_type = "image/jpeg"
         elif path == "/health":
             self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": ["groq", "openai", "anthropic", "openrouter", "nvidia_nim", "deepseek", "mistral", "xai", "together", "fireworks", "cerebras", "ollama", "lmstudio", "custom"]})
             return
@@ -423,10 +430,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = file_path.read_bytes()
         except OSError:
-            self.send_json(500, {"error": "Could not load web/index.html"})
+            self.send_json(500, {"error": "Could not load the requested web asset."})
             return
         self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
