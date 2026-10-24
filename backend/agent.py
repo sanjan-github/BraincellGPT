@@ -56,12 +56,26 @@ TOOLS = [
 def _safe_path(root: Path, relative: str) -> Path:
     if not isinstance(relative, str) or not relative.strip() or len(relative) > 1000:
         raise ValueError("Provide a valid project-relative path.")
-    candidate = (root / relative).resolve()
+    requested = Path(relative)
+    if requested.is_absolute() or ".." in requested.parts:
+        raise ValueError("Path must stay inside the project workspace.")
+    root_resolved = root.resolve()
+    candidate_path = root_resolved / requested
+
+    # Reject symlinks before resolving the path. Resolving first would silently
+    # turn a symlink target into an ordinary in-workspace path and permit writes
+    # through the link.
+    current = root_resolved
+    for part in requested.parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError("Access through symbolic links is disabled.")
+
+    candidate = candidate_path.resolve()
     try:
-        candidate.relative_to(root.resolve())
+        relative_parts = candidate.relative_to(root_resolved).parts
     except ValueError as exc:
         raise ValueError("Path is outside the project workspace.") from exc
-    relative_parts = candidate.relative_to(root.resolve()).parts
     if any(part in IGNORED_DIRS for part in relative_parts) or _is_protected_file(candidate):
         raise ValueError("Access to this project path is disabled.")
     return candidate
