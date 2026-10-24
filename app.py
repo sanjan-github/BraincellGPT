@@ -16,7 +16,8 @@ from collections import defaultdict, deque
 from threading import Lock
 import time
 import re
-from backend.agent import run_agent
+from backend.agent import restore_checkpoint, run_agent
+from backend.agent_state import get_agent_store
 from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 
 ROOT = Path(__file__).resolve().parent
@@ -398,6 +399,11 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_sse_event(self, event: dict) -> None:
+        body = ("data: " + json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n\n").encode("utf-8")
+        self.wfile.write(body)
+        self.wfile.flush()
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         content_type = "text/html; charset=utf-8"
@@ -430,6 +436,32 @@ class Handler(BaseHTTPRequestHandler):
                 configured = bool(_profile_secrets.get(profile_id))
             self.send_json(200, {"configured": configured})
             return
+        elif path == "/api/agent/sessions":
+            if not self.is_trusted_local_request() or self.client_address[0] not in ("127.0.0.1", "::1"):
+                self.send_json(403, {"error": "This local app only accepts requests from this computer."})
+                return
+            if rate_limited(self.client_address[0] + ":agent-sessions"):
+                self.send_json(429, {"error": "Too many requests. Wait a minute and try again."})
+                return
+            try:
+                store = get_agent_store()
+                query = parse_qs(urlparse(self.path).query)
+                session_id = query.get("id", [""])[0]
+                if session_id:
+                    session = store.get_session(session_id)
+                    if not session or Path(session["workspace"]).resolve() != ROOT.resolve():
+                        self.send_json(404, {"error": "Agent session not found."})
+                        return
+                    self.send_json(200, {
+                        "session": {key: session[key] for key in ("id", "title", "provider", "base_url", "model", "mode", "created_at", "updated_at")},
+                        "turns": store.get_turns(session_id),
+                        "checkpoints": store.list_checkpoints(session_id),
+                    })
+                else:
+                    self.send_json(200, {"sessions": store.list_sessions(str(ROOT.resolve()))})
+            except ValueError as exc:
+                self.send_json(400, {"error": str(exc)})
+            return
         else:
             self.send_json(404, {"error": "Not found"})
             return
@@ -447,7 +479,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = urlparse(self.path).path
-        if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/agent"):
+        if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/agent", "/api/agent/stream", "/api/agent/restore"):
             self.send_json(404, {"error": "Not found"})
             return
         if self.client_address[0] not in ("127.0.0.1", "::1") or not self.is_trusted_local_request():
@@ -459,6 +491,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
             self.send_json(415, {"error": "Content-Type must be application/json."})
             return
+        stream_started = False
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if length <= 0 or length > 200_000:
@@ -484,24 +517,80 @@ class Handler(BaseHTTPRequestHandler):
                         _profile_secrets.pop(profile_id, None)
                 self.send_json(200, {"ok": True, "configured": bool(api_key.strip())})
                 return
-            if route == "/api/agent":
+            if route in ("/api/agent", "/api/agent/stream"):
                 task = payload.get("task", "")
                 if not isinstance(task, str) or not task.strip() or len(task) > 12000:
                     self.send_json(400, {"error": "Provide a task up to 12,000 characters."})
                     return
-                history = payload.get("history", [])
-                if not isinstance(history, list):
-                    history = []
+                provider = payload.get("provider", "") if isinstance(payload.get("provider", ""), str) else ""
+                base_url = payload.get("base_url", "") if isinstance(payload.get("base_url", ""), str) else ""
+                model = payload.get("model", "") if isinstance(payload.get("model", ""), str) else ""
+                mode = payload.get("mode", "") if isinstance(payload.get("mode", ""), str) else ""
+                supplied_session_id = payload.get("session_id", "")
                 profile_id = payload.get("profile_id", "")
                 with _profile_secrets_lock:
                     saved_key = _profile_secrets.get(profile_id, "") if isinstance(profile_id, str) else ""
-                result = run_agent(
-                    task.strip(), history, ROOT,
-                    payload.get("provider", "groq") if isinstance(payload.get("provider", "groq"), str) else "groq",
-                    saved_key, payload.get("base_url", "") if isinstance(payload.get("base_url", ""), str) else "",
-                    payload.get("model", "") if isinstance(payload.get("model", ""), str) else "",
-                    os.environ, allow_edits=payload.get("allow_edits") is True,
-                )
+                store = get_agent_store()
+                if supplied_session_id:
+                    session_id = store.validate_session_id(supplied_session_id)
+                    session = store.get_session(session_id)
+                    if not session or Path(session["workspace"]).resolve() != ROOT.resolve():
+                        self.send_json(404, {"error": "Agent session not found."})
+                        return
+                    provider = provider or session["provider"]
+                    base_url = base_url or session["base_url"]
+                    model = model or session["model"]
+                    mode = mode or session["mode"]
+                    history = store.history(session_id)
+                else:
+                    provider = provider or "groq"
+                    mode = mode or "code"
+                    session_id = store.create_session(str(ROOT.resolve()), provider, base_url, model, mode, task.strip())
+                    history = payload.get("history", [])
+                    if not isinstance(history, list):
+                        history = []
+                store.add_turn(session_id, "user", task.strip())
+                try:
+                    streaming = route == "/api/agent/stream"
+                    callback = None
+                    if streaming:
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                        self.send_header("Cache-Control", "no-store")
+                        self.send_header("Connection", "close")
+                        self.send_header("X-Accel-Buffering", "no")
+                        self.close_connection = True
+                        self.end_headers()
+                        stream_started = True
+                        self.send_sse_event({"type": "start", "session_id": session_id})
+                        callback = self.send_sse_event
+                    result = run_agent(
+                        task.strip(), history, ROOT, provider, saved_key, base_url, model, os.environ,
+                        allow_edits=payload.get("allow_edits") is True,
+                        allow_commands=payload.get("allow_commands") is True,
+                        mode=mode,
+                        session_id=session_id,
+                        event_callback=callback,
+                    )
+                except (RuntimeError, ValueError) as exc:
+                    store.add_turn(session_id, "assistant", str(exc), {"error": True})
+                    raise
+                result["session_id"] = session_id
+                store.update_session(session_id, provider=provider, base_url=base_url, model=model, mode=result.get("mode", mode))
+                metadata = {key: value for key, value in result.items() if key not in {"reply", "session_id"}}
+                store.add_turn(session_id, "assistant", str(result.get("reply", "")), metadata)
+                if streaming:
+                    self.send_sse_event({"type": "done", "result": result})
+                else:
+                    self.send_json(200, result)
+                return
+            if route == "/api/agent/restore":
+                if payload.get("allow_edits") is not True:
+                    self.send_json(403, {"error": "Restoring a checkpoint requires edits to be enabled for this request."})
+                    return
+                session_id = payload.get("session_id", "")
+                checkpoint_id = payload.get("checkpoint_id", "")
+                result = restore_checkpoint(session_id, checkpoint_id, ROOT)
                 self.send_json(200, result)
                 return
             message = str(payload.get("message", "")).strip()
@@ -536,15 +625,49 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_json(200, {"reply": reply})
         except json.JSONDecodeError:
-            self.send_json(400, {"error": "Invalid JSON request."})
+            if stream_started:
+                self.send_sse_event({"type": "error", "error": "Invalid JSON request."})
+            else:
+                self.send_json(400, {"error": "Invalid JSON request."})
         except RuntimeError as exc:
-            self.send_json(502, {"error": str(exc)})
+            if stream_started:
+                self.send_sse_event({"type": "error", "error": str(exc)})
+            else:
+                self.send_json(502, {"error": str(exc)})
         except ValueError as exc:
-            self.send_json(400, {"error": str(exc)})
+            if stream_started:
+                self.send_sse_event({"type": "error", "error": str(exc)})
+            else:
+                self.send_json(400, {"error": str(exc)})
         except Exception as exc:
             # Log the exception type for diagnosis without returning internals to clients.
             print(f"[BrainCellGPT] request failed: {type(exc).__name__}")
-            self.send_json(500, {"error": "Unexpected server error. Check the terminal for details."})
+            if stream_started:
+                self.send_sse_event({"type": "error", "error": "Unexpected server error. Check the terminal for details."})
+            else:
+                self.send_json(500, {"error": "Unexpected server error. Check the terminal for details."})
+
+    def do_DELETE(self) -> None:
+        route = urlparse(self.path).path
+        if route != "/api/agent/sessions":
+            self.send_json(404, {"error": "Not found"})
+            return
+        if self.client_address[0] not in ("127.0.0.1", "::1") or not self.is_trusted_local_request():
+            self.send_json(403, {"error": "This local app only accepts trusted loopback requests."})
+            return
+        if rate_limited(self.client_address[0] + ":agent-session-delete"):
+            self.send_json(429, {"error": "Too many requests. Wait a minute and try again."})
+            return
+        session_id = parse_qs(urlparse(self.path).query).get("id", [""])[0]
+        try:
+            deleted = get_agent_store().delete_session(session_id, str(ROOT.resolve()))
+        except ValueError as exc:
+            self.send_json(400, {"error": str(exc)})
+            return
+        if not deleted:
+            self.send_json(404, {"error": "Agent session not found."})
+            return
+        self.send_json(200, {"deleted": True})
 
     def log_message(self, format: str, *args) -> None:
         print(f"[BrainCellGPT] {self.address_string()} - {format % args}")

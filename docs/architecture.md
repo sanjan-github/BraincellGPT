@@ -23,21 +23,38 @@
 ## Coding agent API
 
 `POST /api/agent` accepts a `task`, optional bounded `history`, `provider`,
-`base_url`, `model`, and `profile_id`. It returns the final `reply`, tool-call
-count, and step count. The agent can list, search, and read files beneath the
-repository root. Set `allow_edits: true` to permit its `write_file` tool for
-that request; edits are otherwise rejected. The API is restricted to loopback
-clients like the other state-changing endpoints.
+`base_url`, `model`, `profile_id`, `mode`, `allow_edits`, and `allow_commands`.
+It returns the final `reply`, tool-call count, step count, mode, and current
+todo list and a persistent `session_id`. `GET /api/agent/sessions` lists local
+tasks; add `?id=<session_id>` for turns and edit checkpoints. Delete a task with
+`DELETE /api/agent/sessions?id=<session_id>`. Restore an edit with
+`POST /api/agent/restore` and an explicit `allow_edits: true`. Use
+`POST /api/agent/stream` with the same body for server-sent events (`start`,
+`text_delta`, `tool_start`, `tool_result`, `done`, and `error`). These APIs are
+restricted to loopback clients like the other state-changing endpoints.
 
-The agent currently uses OpenAI-compatible tool calling, including compatible
-hosted APIs and local Ollama/LM Studio endpoints. It has no shell tool, durable
-conversation store, authentication, MCP integration, or Anthropic tool adapter.
-Tool rounds, file sizes, search results, and workspace paths are bounded.
+The agent stores bounded task histories and up to 100 reversible file-edit
+checkpoints per session in a private SQLite database under the user's local
+application-data directory. API keys are never stored in this database. The
+agent supports OpenAI-compatible and Anthropic native tool calling. Its
+server-enforced Code, Ask, Architect, Debug, and Orchestrator modes filter tools
+by capability. It can read/search files, write or apply exact-match edits, run
+workspace commands when the request explicitly enables them, maintain a task
+checklist, ask a follow-up, switch modes, and delegate bounded subtasks. Tool
+rounds, command timeouts and output, file sizes, search results, and workspace
+paths are bounded.
+
+Roo Code parity work and remaining scope are tracked in
+[`roo-code-parity.md`](roo-code-parity.md).
 
 ## Current limitations
 
-- History is supplied by the browser and is not authoritative server-side storage.
-- There is no authentication, persistent database, memory retrieval, or tool execution.
+- Agent session history is stored server-side in the local SQLite database;
+  ordinary chat history remains browser-managed.
+- There is no authentication or MCP server integration.
+- Tool approval currently uses request-level edit and command flags; a per-tool
+  approval queue remains future work. Streaming progress and checkpoint restore
+  are implemented.
 - A client could submit fabricated history. Production systems should load conversation
   messages server-side after authorization.
 - Saved profile keys live only in server process memory; they are not written to disk,

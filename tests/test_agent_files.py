@@ -29,7 +29,12 @@ class AgentWorkspaceSafetyTests(unittest.TestCase):
         }
         for name, value in protected.items():
             (self.root / name).write_text(value, encoding="utf-8")
+        seen_directory_names = set()
         for directory in (".ssh", ".aws", ".azure", ".gnupg", ".kube", ".SSH", ".AWS", ".GIT"):
+            # Windows filesystems commonly collapse case-only directory names.
+            if directory.casefold() in seen_directory_names:
+                continue
+            seen_directory_names.add(directory.casefold())
             sensitive_dir = self.root / directory
             sensitive_dir.mkdir()
             (sensitive_dir / "config").write_text("needle-protected", encoding="utf-8")

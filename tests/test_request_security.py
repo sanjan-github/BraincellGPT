@@ -1,11 +1,14 @@
 import http.client
 import json
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 
 import app
+from backend.agent_state import AgentStore
 
 
 class RequestSecurityIntegrationTests(unittest.TestCase):
@@ -38,6 +41,87 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
                 self.assertEqual(response.status, 403)
                 self.assertIn("trusted loopback", payload["error"])
                 provider.assert_not_called()
+        finally:
+            connection.close()
+
+    def test_agent_endpoint_passes_mode_and_command_approval_to_backend(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        body = json.dumps({
+            "task": "inspect the project",
+            "provider": "groq",
+            "mode": "debug",
+            "allow_edits": True,
+            "allow_commands": True,
+        })
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                store = AgentStore(Path(directory) / "agent.sqlite3")
+                with patch("app.PORT", self.server.server_port), patch("app.get_agent_store", return_value=store), patch(
+                    "app.run_agent", return_value={"reply": "ready", "mode": "debug", "steps": 1}
+                ) as agent_call:
+                    connection.request("POST", "/api/agent", body=body, headers={"Content-Type": "application/json"})
+                    response = connection.getresponse()
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["reply"], "ready")
+                    self.assertTrue(agent_call.call_args.kwargs["allow_edits"])
+                    self.assertTrue(agent_call.call_args.kwargs["allow_commands"])
+                    self.assertEqual(agent_call.call_args.kwargs["mode"], "debug")
+                    session_id = payload["session_id"]
+
+                    connection.request("GET", "/api/agent/sessions", headers={"Host": f"127.0.0.1:{self.server.server_port}"})
+                    sessions_response = connection.getresponse()
+                    sessions = json.loads(sessions_response.read().decode("utf-8"))["sessions"]
+                    self.assertEqual(len(sessions), 1)
+                    self.assertEqual(sessions[0]["id"], session_id)
+
+                    connection.request("GET", f"/api/agent/sessions?id={session_id}", headers={"Host": f"127.0.0.1:{self.server.server_port}"})
+                    detail_response = connection.getresponse()
+                    detail = json.loads(detail_response.read().decode("utf-8"))
+                    self.assertEqual(len(detail["turns"]), 2)
+
+                    second_body = json.dumps({"task": "continue task", "session_id": session_id})
+                    connection.request("POST", "/api/agent", body=second_body, headers={"Content-Type": "application/json"})
+                    second_response = connection.getresponse()
+                    self.assertEqual(second_response.status, 200)
+                    self.assertEqual(
+                        agent_call.call_args_list[-1].args[1],
+                        [
+                            {"role": "user", "content": "inspect the project"},
+                            {"role": "assistant", "content": "ready"},
+                        ],
+                    )
+
+                    connection.request("DELETE", f"/api/agent/sessions?id={session_id}", headers={"Host": f"127.0.0.1:{self.server.server_port}"})
+                    delete_response = connection.getresponse()
+                    self.assertEqual(delete_response.status, 200)
+        finally:
+            connection.close()
+
+    def test_agent_stream_endpoint_emits_events_and_persists_final_result(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        body = json.dumps({"task": "stream this", "provider": "groq"})
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                store = AgentStore(Path(directory) / "agent.sqlite3")
+                def fake_agent(*_args, **kwargs):
+                    kwargs["event_callback"]({"type": "text_delta", "delta": "hello"})
+                    return {"reply": "hello", "mode": "code", "steps": 1}
+                with patch("app.PORT", self.server.server_port), patch("app.get_agent_store", return_value=store), patch(
+                    "app.run_agent", side_effect=fake_agent
+                ):
+                    connection.request(
+                        "POST", "/api/agent/stream", body=body,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    response = connection.getresponse()
+                    payload = response.read().decode()
+                    events = [json.loads(line[6:]) for line in payload.splitlines() if line.startswith("data: ")]
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(response.getheader("Content-Type"), "text/event-stream; charset=utf-8")
+                    self.assertEqual([event["type"] for event in events], ["start", "text_delta", "done"])
+                    self.assertEqual(events[-1]["result"]["reply"], "hello")
+                    self.assertEqual(len(store.list_sessions(str(app.ROOT.resolve()))), 1)
         finally:
             connection.close()
 
