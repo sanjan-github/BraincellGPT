@@ -15,13 +15,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from backend.provider_http import PROVIDER_SLOTS, open_provider_request, resolve_public_addresses
+from backend.provider_http import MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 
 
 MAX_FILE_BYTES = 200_000
 MAX_TOOL_RESULT = 24_000
 MAX_STEPS = 8
-MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
+MAX_PROVIDER_RESPONSE_BYTES = SHARED_MAX_PROVIDER_RESPONSE_BYTES
 _PROVIDER_SLOTS = PROVIDER_SLOTS
 IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build", ".idea", ".vscode"}
 IGNORED_FILES = {".env", ".env.local"}
@@ -38,12 +38,12 @@ def _is_protected_file(path: Path) -> bool:
 
 
 def _read_provider_json(response):
-    raw = response.read(MAX_PROVIDER_RESPONSE_BYTES + 1)
-    if len(raw) > MAX_PROVIDER_RESPONSE_BYTES:
-        raise ValueError("Provider response exceeded the 2 MB limit.")
+    """Use the shared bounded JSON reader with agent-friendly errors."""
     try:
-        return json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return read_provider_json(response, MAX_PROVIDER_RESPONSE_BYTES)
+    except ProviderResponseTooLarge as exc:
+        raise ValueError("Provider response exceeded the 2 MB limit.") from exc
+    except ProviderInvalidJSON as exc:
         raise ValueError("Provider returned invalid JSON.") from exc
 
 TOOLS = [
