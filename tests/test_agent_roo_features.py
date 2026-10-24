@@ -69,6 +69,36 @@ class AgentEditingToolTests(unittest.TestCase):
             self.assertIn("error", mismatch)
             self.assertEqual(target.read_text(encoding="utf-8"), "alpha\ngamma\n")
 
+    def test_preview_diff_returns_patch_without_modifying_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "sample.txt"
+            target.write_text("alpha\nbeta\nomega\n", encoding="utf-8")
+
+            result = json.loads(run_tool(
+                "preview_diff",
+                {"path": "sample.txt", "old_text": "beta", "new_text": "gamma"},
+                root, allow_edits=False,
+            ))
+
+            self.assertTrue(result["changed"])
+            self.assertIn("-beta", result["diff"])
+            self.assertIn("+gamma", result["diff"])
+            self.assertTrue(result["can_apply"])
+            self.assertEqual(target.read_text(encoding="utf-8"), "alpha\nbeta\nomega\n")
+
+    def test_preview_diff_rejects_ambiguous_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "sample.txt").write_text("same\nsame\n", encoding="utf-8")
+            result = json.loads(run_tool(
+                "preview_diff",
+                {"path": "sample.txt", "old_text": "same", "new_text": "changed"},
+                root, allow_edits=False,
+            ))
+            self.assertIn("error", result)
+            self.assertEqual((root / "sample.txt").read_text(encoding="utf-8"), "same\nsame\n")
+
     def test_command_tool_is_opt_in_and_returns_bounded_structured_result(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

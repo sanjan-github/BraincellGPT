@@ -43,8 +43,8 @@ server-enforced Code, Ask, Architect, Debug, and Orchestrator modes filter tools
 by capability. It can read/search files, write or apply exact-match edits, run
 workspace commands when the request explicitly enables them, maintain a task
 checklist, ask a follow-up, switch modes, and delegate bounded subtasks. Tool
-rounds, command timeouts and output, file sizes, search results, and workspace
-paths are bounded.
+rounds, command timeouts and output, file sizes, diff previews, search results,
+and workspace paths are bounded.
 
 Roo Code parity work and remaining scope are tracked in
 [`roo-code-parity.md`](roo-code-parity.md).

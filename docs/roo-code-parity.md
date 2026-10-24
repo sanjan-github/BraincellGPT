@@ -12,7 +12,8 @@ and extension-host APIs are outside this backend port.
   capability filtering.
 - OpenAI-compatible tool calls and Anthropic's native Messages tool protocol.
 - Bounded list, read, and literal-search tools that omit protected paths.
-- Atomic file writes, exact-match search/replace, and guarded text diffs.
+- Atomic file writes, exact-match search/replace, non-mutating unified diff
+  previews, and guarded text diffs.
 - Streaming approval queue for each edit and command call, alongside backward-
   compatible request-level edit and command flags. Commands have timeouts and
   bounded captured output.
@@ -30,7 +31,7 @@ and extension-host APIs are outside this backend port.
 
 ## Remaining backend work
 
-1. Add diff previews and grouped undo/history views for the existing checkpoints.
+1. Add grouped undo/history views for the existing checkpoints.
 2. Add configurable MCP stdio servers with tool/resource discovery and the same
    approval policy.
 4. Expand provider adapters and model capability metadata, then add semantic

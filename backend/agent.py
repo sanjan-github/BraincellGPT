@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import difflib
 import urllib.error
 import urllib.request
 import re
@@ -32,6 +33,7 @@ _PROVIDER_SLOTS = PROVIDER_SLOTS
 MAX_COMMAND_SECONDS = 60
 MAX_COMMAND_OUTPUT_BYTES = 16_000
 MAX_DIFF_BYTES = 100_000
+MAX_DIFF_PREVIEW_CHARS = 24_000
 IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build", ".idea", ".vscode", ".ssh", ".aws", ".azure", ".gnupg", ".kube"}
 IGNORED_FILES = {".env", ".env.local"}
 PROTECTED_FILE_PATTERNS = (
@@ -72,6 +74,7 @@ TOOLS = [
     _tool("list_files", "List visible project files under an optional relative directory.", {"directory": {"type": "string"}}),
     _tool("read_file", "Read a bounded UTF-8 project file.", {"path": {"type": "string"}}, ("path",)),
     _tool("search_files", "Search visible project files for a literal string.", {"query": {"type": "string"}, "directory": {"type": "string"}}, ("query",)),
+    _tool("preview_diff", "Preview an exact single-occurrence text replacement without changing the file.", {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, ("path", "old_text", "new_text")),
     _tool("write_file", "Create or replace a project text file when edits are enabled.", {"path": {"type": "string"}, "content": {"type": "string"}}, ("path", "content")),
     _tool("search_replace", "Replace an exact text match in one project file when edits are enabled.", {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}, "expected_replacements": {"type": "integer", "minimum": 1, "maximum": 100}}, ("path", "old_text", "new_text")),
     _tool("apply_diff", "Apply one exact, bounded text diff to a project file when edits are enabled.", {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, ("path", "old_text", "new_text")),
@@ -84,7 +87,7 @@ TOOLS = [
 ]
 
 TOOL_GROUPS = {
-    "list_files": "read", "read_file": "read", "search_files": "read",
+    "list_files": "read", "read_file": "read", "search_files": "read", "preview_diff": "read",
     "write_file": "edit", "search_replace": "edit", "apply_diff": "edit",
     "execute_command": "command",
     "ask_followup_question": "workflow", "attempt_completion": "workflow",
@@ -315,6 +318,34 @@ def run_tool(
                 except (UnicodeDecodeError, OSError):
                     continue
             return json.dumps({"matches": matches, "truncated": False})
+        if name == "preview_diff":
+            path = _safe_path(root, args.get("path"))
+            _edit_target(path, mode)
+            if not path.is_file() or path.stat().st_size > MAX_FILE_BYTES:
+                raise ValueError("Diff preview target must be an existing file no larger than 200 KB.")
+            old_text, new_text = args.get("old_text"), args.get("new_text")
+            if not isinstance(old_text, str) or not old_text or not isinstance(new_text, str):
+                raise ValueError("Provide non-empty old_text and string new_text values.")
+            if len(old_text.encode("utf-8")) + len(new_text.encode("utf-8")) > MAX_DIFF_BYTES:
+                raise ValueError("The requested diff preview is too large.")
+            original = path.read_text(encoding="utf-8")
+            actual = original.count(old_text)
+            if actual != 1:
+                raise ValueError(f"Diff preview requires exactly one match; found {actual}. No changes were made.")
+            updated = original.replace(old_text, new_text, 1)
+            relative = path.relative_to(root.resolve()).as_posix()
+            patch = "".join(difflib.unified_diff(
+                original.splitlines(keepends=True), updated.splitlines(keepends=True),
+                fromfile="a/" + relative, tofile="b/" + relative,
+            ))
+            truncated = len(patch) > MAX_DIFF_PREVIEW_CHARS
+            return json.dumps({
+                "path": relative,
+                "changed": original != updated,
+                "diff": patch[:MAX_DIFF_PREVIEW_CHARS],
+                "truncated": truncated,
+                "can_apply": True,
+            })
         if name == "write_file":
             path = _safe_path(root, args.get("path"))
             _edit_target(path, mode)
@@ -664,7 +695,7 @@ def _approval_preview(name: str, args: dict) -> dict:
     if name == "write_file":
         content = args.get("content", "")
         if isinstance(content, str):
-            preview.update({"bytes": len(content.encode("utf-8")), "content_preview": content[:2000], "truncated": len(content) > 2000})
+            preview.update({"bytes": len(content.encode("utf-8", errors="replace")), "content_preview": content[:2000], "truncated": len(content) > 2000})
     else:
         for key in ("old_text", "new_text"):
             value = args.get(key, "")
