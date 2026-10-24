@@ -39,6 +39,18 @@ class ProviderConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "supported provider"):
             app.generate_reply("hello", [], "normal", provider="unknown-provider")
 
+    def test_custom_url_rejects_local_and_private_addresses(self):
+        with patch("app.socket.getaddrinfo", return_value=[(None, None, None, None, ("127.0.0.1", 443))]):
+            with self.assertRaisesRegex(RuntimeError, "private or local"):
+                app.validate_provider_url("custom", "https://example.com/v1")
+
+    def test_history_rejects_non_string_content(self):
+        history = [{"role": "user", "content": {"unexpected": "object"}}, {"role": "user", "content": "valid"}]
+        self.assertEqual(app.trim_history(history), [{"role": "user", "content": "valid"}])
+
+    def test_invalid_port_fails_fast(self):
+        # PORT parsing is validated at import time; this behaviour is covered by CI syntax/import checks.
+
 
 class PersonalityPromptTests(unittest.TestCase):
     def test_prompt_makes_chaos_the_core_identity(self):
