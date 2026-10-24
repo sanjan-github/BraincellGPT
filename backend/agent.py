@@ -23,10 +23,11 @@ MAX_TOOL_RESULT = 24_000
 MAX_STEPS = 8
 MAX_PROVIDER_RESPONSE_BYTES = SHARED_MAX_PROVIDER_RESPONSE_BYTES
 _PROVIDER_SLOTS = PROVIDER_SLOTS
-IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build", ".idea", ".vscode"}
+IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build", ".idea", ".vscode", ".ssh", ".aws", ".azure", ".gnupg", ".kube"}
 IGNORED_FILES = {".env", ".env.local"}
 PROTECTED_FILE_PATTERNS = (
     re.compile(r"^\.env(?:\..*)?$", re.IGNORECASE),
+    re.compile(r"^\.(?:npmrc|pypirc|netrc)$", re.IGNORECASE),
     re.compile(r".*\.(?:pem|key|p12|pfx|keystore)$", re.IGNORECASE),
     re.compile(r".*(?:secret|credential|token|private[_-]?key).*", re.IGNORECASE),
     re.compile(r"^(?:id_rsa|id_ed25519|known_hosts|authorized_keys)$", re.IGNORECASE),
