@@ -27,6 +27,7 @@ and extension-host APIs are outside this backend port.
   protocol negotiation, per-call approval, bounded JSON-RPC frames, and filtered
   child environments.
 - Reversible file-edit checkpoints and explicit restore/redo operations.
+- Per-agent-run grouped checkpoint history with multi-file restore and redo groups.
 - OpenAI-compatible and Anthropic server-sent event parsing, incremental text
   deltas, tool progress, and a local-only streaming agent endpoint.
 - Provider transport limits, shared concurrency control, no redirects, and
@@ -34,11 +35,10 @@ and extension-host APIs are outside this backend port.
 
 ## Remaining backend work
 
-1. Add grouped undo/history views for the existing checkpoints.
-2. Add remote Streamable HTTP MCP servers and authorization support.
-3. Expand provider adapters and model capability metadata, then add semantic
+1. Add remote Streamable HTTP MCP servers and authorization support.
+2. Expand provider adapters and model capability metadata, then add semantic
   conversation compaction and image inputs.
-4. Add end-to-end acceptance coverage for task persistence, approval, streaming,
+3. Add end-to-end acceptance coverage for task persistence, approval, streaming,
    and rollback.
 
 ## Current API extension
@@ -49,7 +49,10 @@ server-enforced per-request capabilities. The model cannot elevate them by
 requesting a tool. Orchestrator subtasks run sequentially and are limited to two
 nested levels. Sessions are managed through `GET /api/agent/sessions`,
 `GET /api/agent/sessions?id=<id>`, and `DELETE /api/agent/sessions?id=<id>`.
-Restore a file snapshot with `POST /api/agent/restore` and `allow_edits: true`.
+Inspect grouped snapshots in the `checkpoint_groups` field returned for a
+session. Restore an individual file snapshot or a complete agent-run group with
+`POST /api/agent/restore` and `allow_edits: true`; provide either
+`checkpoint_id` or `group_id`. Group restore creates a corresponding redo group.
 Use `POST /api/agent/stream` with the same JSON body for a server-sent event
 stream. JSON `data:` frames report `start`, `text_delta`, `tool_start`,
 `approval_required`, `tool_result`, `done`, or `error`; `done` carries the

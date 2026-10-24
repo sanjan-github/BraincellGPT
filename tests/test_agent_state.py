@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.agent import restore_checkpoint, run_tool
+from backend.agent import restore_checkpoint, restore_checkpoint_group, run_tool
 from backend.agent_state import AgentStore
 
 
@@ -83,6 +83,29 @@ class AgentCheckpointTests(unittest.TestCase):
             restore_checkpoint(self.session_id, checkpoint_id, self.root)
 
         self.assertFalse((self.root / "new.txt").exists())
+
+    def test_restore_checkpoint_group_reverts_all_files_to_run_start(self):
+        first = self.root / "first.txt"
+        second = self.root / "second.txt"
+        first.write_text("first before\n", encoding="utf-8")
+        second.write_text("second before\n", encoding="utf-8")
+        group_id = "a" * 32
+        with patch("backend.agent.get_agent_store", return_value=self.store):
+            run_tool("write_file", {"path": "first.txt", "content": "first changed\n"}, self.root, True, session_id=self.session_id, checkpoint_group_id=group_id)
+            run_tool("write_file", {"path": "first.txt", "content": "first changed again\n"}, self.root, True, session_id=self.session_id, checkpoint_group_id=group_id)
+            run_tool("write_file", {"path": "second.txt", "content": "second changed\n"}, self.root, True, session_id=self.session_id, checkpoint_group_id=group_id)
+
+            groups = self.store.list_checkpoint_groups(self.session_id)
+            self.assertEqual(groups[0]["id"], group_id)
+            self.assertEqual(set(groups[0]["files"]), {"first.txt", "second.txt"})
+            self.assertEqual(len(groups[0]["checkpoints"]), 3)
+
+            restored = restore_checkpoint_group(self.session_id, group_id, self.root)
+
+        self.assertEqual(first.read_text(encoding="utf-8"), "first before\n")
+        self.assertEqual(second.read_text(encoding="utf-8"), "second before\n")
+        self.assertEqual(set(restored["restored"]), {"first.txt", "second.txt"})
+        self.assertTrue(restored["redo_group_id"])
 
 
 if __name__ == "__main__":

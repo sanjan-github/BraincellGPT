@@ -14,6 +14,7 @@ import urllib.request
 import re
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -195,7 +196,7 @@ def _edit_target(path: Path, mode: str) -> None:
         raise ValueError("Architect mode may only edit Markdown files.")
 
 
-def _record_checkpoint(session_id: str | None, root: Path, path: Path) -> str | None:
+def _record_checkpoint(session_id: str | None, root: Path, path: Path, group_id: str | None = None) -> str | None:
     if not session_id:
         return None
     if not SESSION_ID_RE.fullmatch(session_id):
@@ -208,7 +209,7 @@ def _record_checkpoint(session_id: str | None, root: Path, path: Path) -> str | 
     if previous is not None and len(previous) > MAX_FILE_BYTES:
         raise ValueError("Files larger than 200 KB cannot be checkpointed or edited.")
     relative = path.relative_to(root.resolve()).as_posix()
-    return get_agent_store().add_checkpoint(session_id, relative, previous, existed)
+    return get_agent_store().add_checkpoint(session_id, relative, previous, existed, group_id)
 
 
 def _bounded_command_output(stream, results: dict, key: str) -> None:
@@ -279,6 +280,7 @@ def run_tool(
     allow_commands: bool = False,
     mode: str = "code",
     session_id: str | None = None,
+    checkpoint_group_id: str | None = None,
 ) -> str:
     try:
         mode = normalize_mode(mode)
@@ -356,7 +358,7 @@ def run_tool(
             if path.exists() and path.is_dir():
                 raise ValueError("Path points to a directory.")
             path.parent.mkdir(parents=True, exist_ok=True)
-            checkpoint_id = _record_checkpoint(session_id, root, path)
+            checkpoint_id = _record_checkpoint(session_id, root, path, checkpoint_group_id)
             _write_text_atomically(path, content)
             result = {"written": path.relative_to(root).as_posix(), "bytes": len(content.encode("utf-8"))}
             if checkpoint_id:
@@ -382,7 +384,7 @@ def run_tool(
             updated = original.replace(old_text, new_text, expected)
             if len(updated.encode("utf-8")) > MAX_FILE_BYTES:
                 raise ValueError("Edited file would exceed the 200 KB limit.")
-            checkpoint_id = _record_checkpoint(session_id, root, path)
+            checkpoint_id = _record_checkpoint(session_id, root, path, checkpoint_group_id)
             _write_text_atomically(path, updated)
             result = {"written": path.relative_to(root).as_posix(), "replacements": actual}
             if checkpoint_id:
@@ -444,6 +446,50 @@ def restore_checkpoint(session_id: str, checkpoint_id: str, root: Path) -> dict:
             raise ValueError("Checkpoint target is no longer a regular file.")
         path.unlink()
     return {"restored": path.relative_to(root.resolve()).as_posix(), "redo_checkpoint_id": redo_checkpoint}
+
+
+def restore_checkpoint_group(session_id: str, group_id: str, root: Path) -> dict:
+    store = get_agent_store()
+    session = store.get_session(session_id)
+    if not session or Path(session["workspace"]).resolve() != root.resolve():
+        raise ValueError("Agent session was not found for this workspace.")
+    checkpoints = store.get_checkpoint_group(group_id, session_id)
+    if not checkpoints:
+        raise ValueError("Checkpoint group was not found for this agent session.")
+
+    initial_by_path = {}
+    for checkpoint in checkpoints:
+        initial_by_path.setdefault(checkpoint["relative_path"], checkpoint)
+    prepared = []
+    for relative, checkpoint in initial_by_path.items():
+        path = _safe_path(root, relative)
+        if checkpoint["existed"]:
+            previous = checkpoint["previous_content"]
+            if previous is None or len(previous) > MAX_FILE_BYTES:
+                raise ValueError("Checkpoint content is invalid or too large.")
+            try:
+                content = previous.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError("Checkpoint content is not valid UTF-8 text.") from exc
+        else:
+            content = None
+        prepared.append((path, checkpoint["existed"], content))
+
+    redo_group_id = uuid.uuid4().hex
+    for path, _existed, _content in prepared:
+        _record_checkpoint(session_id, root, path, redo_group_id)
+    for path, existed, content in prepared:
+        if existed:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _write_text_atomically(path, content)
+        elif path.exists():
+            if path.is_symlink() or not path.is_file():
+                raise ValueError("Checkpoint target is no longer a regular file.")
+            path.unlink()
+    return {
+        "restored": [path.relative_to(root.resolve()).as_posix() for path, _existed, _content in prepared],
+        "redo_group_id": redo_group_id,
+    }
 
 
 def _anthropic_payload(model: str, messages: list[dict], tools: list[dict], max_tokens: int) -> dict:
@@ -791,9 +837,14 @@ def run_agent(
     event_callback=None,
     approval_callback=None,
     mcp_router: mcp_stdio.MCPToolRouter | None = None,
+    checkpoint_group_id: str | None = None,
 ) -> dict:
     provider = provider.strip().lower()
     mode = normalize_mode(mode)
+    if session_id:
+        checkpoint_group_id = checkpoint_group_id or uuid.uuid4().hex
+        if not SESSION_ID_RE.fullmatch(checkpoint_group_id):
+            raise ValueError("Invalid checkpoint group ID.")
     mcp_tools: list[dict] = []
     mcp_routes: dict[str, mcp_stdio.MCPToolRoute] = {}
     if approval_callback is not None:
@@ -944,7 +995,7 @@ def run_agent(
                         except (OSError, ValueError, subprocess.SubprocessError) as exc:
                             result = json.dumps({"error": str(exc)[:500]})
                     else:
-                        result = run_tool(name, args, root, True, True, mode, session_id)
+                        result = run_tool(name, args, root, True, True, mode, session_id, checkpoint_group_id)
                 else:
                     result = json.dumps({"error": "The user rejected or did not approve this tool action."})
             elif name == "new_task":
@@ -962,6 +1013,7 @@ def run_agent(
                             session_id=session_id, event_callback=event_callback,
                             approval_callback=approval_callback,
                             mcp_router=mcp_router,
+                            checkpoint_group_id=checkpoint_group_id,
                         )
                         result = json.dumps({"subtask_result": child})
                     except (RuntimeError, ValueError) as exc:
@@ -969,7 +1021,7 @@ def run_agent(
             else:
                 if mutating:
                     executed_mutations.add(signature)
-                result = run_tool(name, args, root, allow_edits, allow_commands, mode, session_id)
+                result = run_tool(name, args, root, allow_edits, allow_commands, mode, session_id, checkpoint_group_id)
             if event_callback is not None:
                 try:
                     preview = json.loads(result)

@@ -16,7 +16,7 @@ from collections import defaultdict, deque
 from threading import Lock
 import time
 import re
-from backend.agent import restore_checkpoint, run_agent
+from backend.agent import restore_checkpoint, restore_checkpoint_group, run_agent
 from backend.agent_approvals import get_approval_registry
 from backend.mcp_stdio import MCPToolRouter
 from backend.agent_state import get_agent_store
@@ -458,6 +458,7 @@ class Handler(BaseHTTPRequestHandler):
                         "session": {key: session[key] for key in ("id", "title", "provider", "base_url", "model", "mode", "created_at", "updated_at")},
                         "turns": store.get_turns(session_id),
                         "checkpoints": store.list_checkpoints(session_id),
+                        "checkpoint_groups": store.list_checkpoint_groups(session_id),
                     })
                 else:
                     self.send_json(200, {"sessions": store.list_sessions(str(ROOT.resolve()))})
@@ -619,8 +620,12 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(403, {"error": "Restoring a checkpoint requires edits to be enabled for this request."})
                     return
                 session_id = payload.get("session_id", "")
-                checkpoint_id = payload.get("checkpoint_id", "")
-                result = restore_checkpoint(session_id, checkpoint_id, ROOT)
+                group_id = payload.get("group_id")
+                if group_id is not None:
+                    result = restore_checkpoint_group(session_id, group_id, ROOT)
+                else:
+                    checkpoint_id = payload.get("checkpoint_id", "")
+                    result = restore_checkpoint(session_id, checkpoint_id, ROOT)
                 self.send_json(200, result)
                 return
             message = str(payload.get("message", "")).strip()

@@ -84,6 +84,7 @@ class AgentStore:
                 CREATE TABLE IF NOT EXISTS checkpoints (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    group_id TEXT,
                     relative_path TEXT NOT NULL,
                     previous_content BLOB,
                     existed INTEGER NOT NULL,
@@ -91,6 +92,9 @@ class AgentStore:
                 );
                 CREATE INDEX IF NOT EXISTS checkpoints_session_idx ON checkpoints(session_id, created_at DESC);
             """)
+            checkpoint_columns = {row[1] for row in db.execute("PRAGMA table_info(checkpoints)")}
+            if "group_id" not in checkpoint_columns:
+                db.execute("ALTER TABLE checkpoints ADD COLUMN group_id TEXT")
         if os.name != "nt":
             try:
                 self.path.chmod(0o600)
@@ -184,13 +188,22 @@ class AgentStore:
             cursor = db.execute("DELETE FROM sessions WHERE id=? AND workspace=?", (session_id, workspace))
         return cursor.rowcount == 1
 
-    def add_checkpoint(self, session_id: str, relative_path: str, previous_content: bytes | None, existed: bool) -> str:
+    def add_checkpoint(
+        self,
+        session_id: str,
+        relative_path: str,
+        previous_content: bytes | None,
+        existed: bool,
+        group_id: str | None = None,
+    ) -> str:
         session_id = self.validate_session_id(session_id)
+        if group_id is not None and (not isinstance(group_id, str) or not SESSION_ID_RE.fullmatch(group_id)):
+            raise ValueError("Invalid checkpoint group ID.")
         checkpoint_id = uuid.uuid4().hex
         with self._connect() as db:
             db.execute(
-                "INSERT INTO checkpoints(id,session_id,relative_path,previous_content,existed,created_at) VALUES(?,?,?,?,?,?)",
-                (checkpoint_id, session_id, relative_path, previous_content, int(existed), time.time()),
+                "INSERT INTO checkpoints(id,session_id,group_id,relative_path,previous_content,existed,created_at) VALUES(?,?,?,?,?,?,?)",
+                (checkpoint_id, session_id, group_id, relative_path, previous_content, int(existed), time.time()),
             )
             db.execute("DELETE FROM checkpoints WHERE session_id=? AND id NOT IN (SELECT id FROM checkpoints WHERE session_id=? ORDER BY created_at DESC LIMIT ?)", (session_id, session_id, MAX_CHECKPOINTS_PER_SESSION))
             total_checkpoints = db.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
@@ -205,6 +218,45 @@ class AgentStore:
             rows = db.execute(
                 "SELECT id,relative_path,existed,created_at FROM checkpoints WHERE session_id=? ORDER BY created_at DESC LIMIT ?",
                 (session_id, MAX_CHECKPOINTS_PER_SESSION),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_checkpoint_groups(self, session_id: str) -> list[dict]:
+        session_id = self.validate_session_id(session_id)
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT id,group_id,relative_path,existed,created_at FROM checkpoints "
+                "WHERE session_id=? ORDER BY created_at DESC LIMIT ?",
+                (session_id, MAX_CHECKPOINTS_PER_SESSION),
+            ).fetchall()
+        groups: dict[str, dict] = {}
+        for row in rows:
+            checkpoint = dict(row)
+            group_id = checkpoint["group_id"] or checkpoint["id"]
+            group = groups.setdefault(group_id, {
+                "id": group_id,
+                "created_at": checkpoint["created_at"],
+                "files": [],
+                "checkpoints": [],
+            })
+            if checkpoint["relative_path"] not in group["files"]:
+                group["files"].append(checkpoint["relative_path"])
+            group["checkpoints"].append({
+                "id": checkpoint["id"],
+                "path": checkpoint["relative_path"],
+                "existed": bool(checkpoint["existed"]),
+            })
+            group["created_at"] = max(group["created_at"], checkpoint["created_at"])
+        return sorted(groups.values(), key=lambda item: item["created_at"], reverse=True)
+
+    def get_checkpoint_group(self, group_id: str, session_id: str) -> list[dict]:
+        if not isinstance(group_id, str) or not SESSION_ID_RE.fullmatch(group_id):
+            raise ValueError("Invalid checkpoint group ID.")
+        session_id = self.validate_session_id(session_id)
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM checkpoints WHERE session_id=? AND group_id=? ORDER BY created_at ASC,id ASC",
+                (session_id, group_id),
             ).fetchall()
         return [dict(row) for row in rows]
 
