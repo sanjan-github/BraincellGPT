@@ -351,6 +351,30 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
 class Handler(BaseHTTPRequestHandler):
     server_version = "BrainCellGPT/0.1"
 
+    def is_trusted_local_request(self) -> bool:
+        """Reject non-loopback hosts and cross-origin browser requests."""
+        host = self.headers.get("Host", "")
+        try:
+            parsed_host = urlsplit("http://" + host)
+            if parsed_host.hostname not in ("localhost", "127.0.0.1", "::1") or parsed_host.port != PORT:
+                return False
+        except ValueError:
+            return False
+        origin = self.headers.get("Origin")
+        if origin:
+            try:
+                parsed_origin = urlsplit(origin)
+                if parsed_origin.scheme != "http" or parsed_origin.hostname not in ("localhost", "127.0.0.1", "::1") or parsed_origin.port != PORT:
+                    return False
+            except ValueError:
+                return False
+        if self.headers.get("Sec-Fetch-Site", "").lower() in ("cross-site", "same-site"):
+            # Local app UI is same-origin; cross-site and sibling-origin browser requests are not needed.
+            origin = self.headers.get("Origin", "")
+            if not origin:
+                return False
+        return True
+
     def end_headers(self) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
@@ -371,12 +395,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
+            if not self.is_trusted_local_request():
+                self.send_json(403, {"error": "Untrusted Host or Origin."})
+                return
             file_path = WEB_DIR / "index.html"
         elif path == "/health":
             self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": ["groq", "openai", "anthropic", "openrouter", "nvidia_nim", "deepseek", "mistral", "xai", "together", "fireworks", "cerebras", "ollama", "lmstudio", "custom"]})
             return
         elif path == "/api/profile-secret-status":
-            if self.client_address[0] not in ("127.0.0.1", "::1"):
+            if not self.is_trusted_local_request() or self.client_address[0] not in ("127.0.0.1", "::1"):
                 self.send_json(403, {"error": "This local app only accepts requests from this computer."})
                 return
             if rate_limited(self.client_address[0] + ":profile-secret-status"):
@@ -410,8 +437,8 @@ class Handler(BaseHTTPRequestHandler):
         if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/agent"):
             self.send_json(404, {"error": "Not found"})
             return
-        if self.client_address[0] not in ("127.0.0.1", "::1"):
-            self.send_json(403, {"error": "This local app only accepts requests from this computer."})
+        if self.client_address[0] not in ("127.0.0.1", "::1") or not self.is_trusted_local_request():
+            self.send_json(403, {"error": "This local app only accepts trusted loopback requests."})
             return
         if rate_limited(self.client_address[0] + ":" + route):
             self.send_json(429, {"error": "Too many requests. Wait a minute and try again."})
