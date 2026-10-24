@@ -149,5 +149,26 @@ class AgentCustomProviderPinningTests(unittest.TestCase):
         self.assertEqual(opener.call_args.kwargs["pinned_addresses"], pinned)
 
 
+class SharedProviderJsonReaderTests(unittest.TestCase):
+    def test_reads_valid_json_with_bounded_reader(self):
+        response = MagicMock()
+        response.read.return_value = b'{"ok": true}'
+        self.assertEqual(provider_http.read_provider_json(response, 32), {"ok": True})
+        response.read.assert_called_once_with(33)
+
+    def test_rejects_oversized_provider_response(self):
+        response = MagicMock()
+        response.read.return_value = b"x" * 9
+        with self.assertRaises(provider_http.ProviderResponseTooLarge):
+            provider_http.read_provider_json(response, 8)
+        response.read.assert_called_once_with(9)
+
+    def test_rejects_invalid_provider_json(self):
+        response = MagicMock()
+        response.read.return_value = b"{bad json"
+        with self.assertRaises(provider_http.ProviderInvalidJSON):
+            provider_http.read_provider_json(response, 32)
+
+
 if __name__ == "__main__":
     unittest.main()
