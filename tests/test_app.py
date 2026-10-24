@@ -75,7 +75,7 @@ class ApiReliabilityTests(unittest.TestCase):
         response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
         response.__enter__.return_value = response
 
-        with patch("app.urllib.request.urlopen", return_value=response) as urlopen:
+        with patch("app.open_provider_request", return_value=response) as urlopen:
             self.assertEqual(app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key"), "reply")
 
         request = urlopen.call_args.args[0]
@@ -90,7 +90,7 @@ class ApiReliabilityTests(unittest.TestCase):
         response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
         response.__enter__.return_value = response
 
-        with patch.dict(os.environ, {"GROQ_MODEL": ""}), patch("app.urllib.request.urlopen", return_value=response) as urlopen:
+        with patch.dict(os.environ, {"GROQ_MODEL": ""}), patch("app.open_provider_request", return_value=response) as urlopen:
             app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
 
         payload = json.loads(urlopen.call_args.args[0].data.decode("utf-8"))
@@ -101,7 +101,7 @@ class ApiReliabilityTests(unittest.TestCase):
         response.read.return_value = b"not-json"
         response.__enter__.return_value = response
 
-        with patch("app.urllib.request.urlopen", return_value=response):
+        with patch("app.open_provider_request", return_value=response):
             with self.assertRaisesRegex(RuntimeError, "invalid JSON response"):
                 app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
 
@@ -114,7 +114,7 @@ class ApiReliabilityTests(unittest.TestCase):
             io.BytesIO(b'{"error":{"message":"bad secret-key"}}'),
         )
 
-        with patch("app.urllib.request.urlopen", side_effect=error):
+        with patch("app.open_provider_request", side_effect=error):
             with self.assertRaisesRegex(RuntimeError, "Groq returned HTTP 403") as raised:
                 app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
 
@@ -141,7 +141,7 @@ class ConversationMemoryTests(unittest.TestCase):
         response.__enter__.return_value = response
         history = [{"role": "user", "content": "message " + ("z" * 5000)} for _ in range(16)]
 
-        with patch("app.urllib.request.urlopen", return_value=response) as urlopen:
+        with patch("app.open_provider_request", return_value=response) as urlopen:
             app.generate_reply("latest", history, "normal", provider="groq", user_api_key="secret-key")
 
         payload = json.loads(urlopen.call_args.args[0].data.decode("utf-8"))
@@ -175,7 +175,7 @@ class ModelCompatibilityTests(unittest.TestCase):
         response.read.return_value = b'{"content":[{"type":"text","text":"reply"}]}'
         response.__enter__.return_value = response
 
-        with patch("app.urllib.request.urlopen", return_value=response) as urlopen:
+        with patch("app.open_provider_request", return_value=response) as urlopen:
             self.assertEqual(app.generate_reply("hello", [], "normal", provider="anthropic", user_api_key="secret-key"), "reply")
 
         request = urlopen.call_args.args[0]
@@ -192,7 +192,7 @@ class ModelCompatibilityTests(unittest.TestCase):
         response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
         response.__enter__.return_value = response
 
-        with patch("app.urllib.request.urlopen", return_value=response) as urlopen:
+        with patch("app.open_provider_request", return_value=response) as urlopen:
             self.assertEqual(app.generate_reply("hello", [], "normal", provider="ollama"), "reply")
 
         request = urlopen.call_args.args[0]
