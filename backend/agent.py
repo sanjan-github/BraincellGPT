@@ -795,7 +795,7 @@ def run_agent(
     provider = provider.strip().lower()
     mode = normalize_mode(mode)
     mcp_tools: list[dict] = []
-    mcp_routes: dict[str, tuple[mcp_stdio.MCPServerSpec, str]] = {}
+    mcp_routes: dict[str, mcp_stdio.MCPToolRoute] = {}
     if approval_callback is not None:
         if mcp_router is not None:
             mcp_tools, mcp_routes = mcp_router.tools, mcp_router.routes
@@ -927,7 +927,10 @@ def run_agent(
                     "type": "approval_required",
                     "tool": name,
                     "call_id": call["id"],
-                    **({"server": mcp_route[0].name, "server_tool": mcp_route[1]} if mcp_route else {}),
+                    **({
+                        "server": mcp_route.server.name,
+                        "server_tool": mcp_route.name or mcp_route.operation,
+                    } if mcp_route else {}),
                     "arguments": _approval_preview(name, args),
                 })
                 if approved:
@@ -936,8 +939,8 @@ def run_agent(
                             if mcp_router is not None:
                                 mcp_result = mcp_router.call(name, args)
                             else:
-                                mcp_result = mcp_stdio.call_tool(mcp_route[0], mcp_route[1], args, environ, root)
-                            result = json.dumps(mcp_result, ensure_ascii=False)
+                                mcp_result = mcp_stdio.call_tool(mcp_route.server, mcp_route.name, args, environ, root)
+                            result = json.dumps(mcp_result)
                         except (OSError, ValueError, subprocess.SubprocessError) as exc:
                             result = json.dumps({"error": str(exc)[:500]})
                     else:

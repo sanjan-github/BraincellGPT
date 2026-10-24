@@ -56,8 +56,8 @@ Roo Code parity work and remaining scope are tracked in
   ordinary chat history remains browser-managed.
 - The local API has no authentication and remains restricted to trusted loopback
   requests.
-- MCP stdio tool discovery and calls are supported for streaming runs; resource
-  operations and remote Streamable HTTP MCP servers are not implemented yet.
+- MCP stdio tool and resource discovery/read are supported for streaming runs;
+  remote Streamable HTTP MCP servers are not implemented yet.
 - Non-streaming tool approval remains request-level; streaming agent calls also
   support a bounded per-tool approval queue. Streaming progress and checkpoint
   restore are implemented.

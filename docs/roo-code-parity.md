@@ -23,9 +23,9 @@ and extension-host APIs are outside this backend port.
   mutating operations.
 - Local SQLite task sessions with bounded turns, deletion, and no persisted API
   keys.
-- Configured MCP stdio tool discovery and calls, with modern and legacy protocol
-  negotiation, per-call approval, bounded JSON-RPC frames, and filtered child
-  environments.
+- Configured MCP stdio tool and resource discovery/reads, with modern and legacy
+  protocol negotiation, per-call approval, bounded JSON-RPC frames, and filtered
+  child environments.
 - Reversible file-edit checkpoints and explicit restore/redo operations.
 - OpenAI-compatible and Anthropic server-sent event parsing, incremental text
   deltas, tool progress, and a local-only streaming agent endpoint.
@@ -35,7 +35,7 @@ and extension-host APIs are outside this backend port.
 ## Remaining backend work
 
 1. Add grouped undo/history views for the existing checkpoints.
-2. Add MCP resource discovery/read support and remote Streamable HTTP servers.
+2. Add remote Streamable HTTP MCP servers and authorization support.
 3. Expand provider adapters and model capability metadata, then add semantic
   conversation compaction and image inputs.
 4. Add end-to-end acceptance coverage for task persistence, approval, streaming,

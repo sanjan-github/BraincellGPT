@@ -38,6 +38,13 @@ class MCPServerSpec:
     env: dict[str, str]
 
 
+@dataclass(frozen=True)
+class MCPToolRoute:
+    server: MCPServerSpec
+    name: str
+    operation: str = "tool"
+
+
 def _safe_child_environment(parent_env: dict[str, str], overrides: dict[str, str]) -> dict[str, str]:
     safe_keys = {
         "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "HOME",
@@ -125,6 +132,27 @@ def _tool_size(tool: dict) -> int:
     return len(json.dumps(tool, ensure_ascii=False, separators=(",", ":")).encode("utf-8", errors="replace"))
 
 
+def _resource_tool_definitions(server: str) -> list[dict]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": _function_name(server, "resource_list"),
+                "description": f"MCP server {server}: list available readable resources.",
+                "parameters": {"type": "object", "properties": {"cursor": {"type": "string"}}, "additionalProperties": False},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": _function_name(server, "resource_read"),
+                "description": f"MCP server {server}: read a resource by its URI.",
+                "parameters": {"type": "object", "properties": {"uri": {"type": "string"}}, "required": ["uri"], "additionalProperties": False},
+            },
+        },
+    ]
+
+
 class _StdioClient:
     def __init__(self, spec: MCPServerSpec, parent_env: dict[str, str], cwd: Path):
         self.spec = spec
@@ -145,6 +173,7 @@ class _StdioClient:
         self._messages: queue.Queue[bytes | BaseException | None] = queue.Queue(maxsize=16)
         self._next_id = 1
         self.era = ""
+        self.capabilities: dict = {}
         self._reader_thread = threading.Thread(target=self._read_stdout, daemon=True)
         self._reader_thread.start()
 
@@ -280,6 +309,7 @@ class _StdioClient:
             if not isinstance(result, dict) or MODERN_VERSION not in result.get("supportedVersions", []):
                 raise _MethodNotFound("MCP server does not advertise the current protocol version.")
             self.era = "modern"
+            self.capabilities = result.get("capabilities", {}) if isinstance(result.get("capabilities"), dict) else {}
             self._next_id = 1
             return
         except (ValueError, queue.Empty, _MethodNotFound):
@@ -296,6 +326,7 @@ class _StdioClient:
         })
         if not isinstance(result.get("capabilities"), dict):
             raise ValueError("MCP server returned invalid initialization capabilities.")
+        self.capabilities = result["capabilities"]
         self._notify("notifications/initialized")
 
     def list_tools(self) -> list[dict]:
@@ -317,6 +348,13 @@ class _StdioClient:
 
     def call_tool(self, tool_name: str, arguments: dict) -> dict:
         return self._request_result("tools/call", {"name": tool_name, "arguments": arguments})
+
+    def list_resources(self, cursor: str | None = None) -> dict:
+        params = {"cursor": cursor} if cursor else {}
+        return self._request_result("resources/list", params)
+
+    def read_resource(self, uri: str) -> dict:
+        return self._request_result("resources/read", {"uri": uri})
 
 
 class _MethodNotFound(Exception):
@@ -346,9 +384,9 @@ def _connect_server(spec: MCPServerSpec, environ: dict[str, str], cwd: Path) -> 
         raise
 
 
-def discover_tools(environ: dict[str, str], cwd: Path, event_callback=None) -> tuple[list[dict], dict[str, tuple[MCPServerSpec, str]]]:
+def discover_tools(environ: dict[str, str], cwd: Path, event_callback=None) -> tuple[list[dict], dict[str, MCPToolRoute]]:
     tools = []
-    routes = {}
+    routes: dict[str, MCPToolRoute] = {}
     specs = load_server_specs(environ)
     total_schema_bytes = 0
     for spec in specs:
@@ -365,7 +403,7 @@ def discover_tools(environ: dict[str, str], cwd: Path, event_callback=None) -> t
                     if total_schema_bytes + size > MAX_TOTAL_TOOL_SCHEMA_BYTES:
                         return tools, routes
                     total_schema_bytes += size
-                    routes[name] = (spec, raw_tool["name"])
+                    routes[name] = MCPToolRoute(spec, raw_tool["name"])
                     tools.append(normalized)
                     if len(tools) >= MAX_TOOLS:
                         return tools, routes
@@ -402,6 +440,13 @@ def normalize_call_result(result: dict) -> dict:
     return normalized
 
 
+def _bounded_json_result(value: dict) -> dict:
+    encoded = json.dumps(value)
+    if len(encoded.encode("utf-8", errors="replace")) <= MAX_CALL_RESULT_BYTES:
+        return value
+    return {"text": encoded[:MAX_CALL_RESULT_BYTES]}
+
+
 class MCPToolRouter:
     """Keep configured stdio servers alive for one complete agent run."""
 
@@ -409,7 +454,7 @@ class MCPToolRouter:
         self.environ = environ
         self.cwd = cwd
         self.tools: list[dict] = []
-        self.routes: dict[str, tuple[MCPServerSpec, str]] = {}
+        self.routes: dict[str, MCPToolRoute] = {}
         self._clients: list[_StdioClient] = []
         total_schema_bytes = 0
         try:
@@ -435,10 +480,25 @@ class MCPToolRouter:
                     if total_schema_bytes + size > MAX_TOTAL_TOOL_SCHEMA_BYTES:
                         return
                     total_schema_bytes += size
-                    self.routes[name] = (spec, raw_tool["name"])
+                    self.routes[name] = MCPToolRoute(spec, raw_tool["name"])
                     self.tools.append(normalized)
                     if len(self.tools) >= MAX_TOOLS:
                         return
+                if "resources" in client.capabilities and len(self.tools) < MAX_TOOLS:
+                    resource_functions = _resource_tool_definitions(spec.name)
+                    for function in resource_functions:
+                        name = function["function"]["name"]
+                        if name in self.routes:
+                            continue
+                        size = _tool_size(function)
+                        if total_schema_bytes + size > MAX_TOTAL_TOOL_SCHEMA_BYTES:
+                            return
+                        total_schema_bytes += size
+                        operation = "resources_list" if name.endswith("__resource_list") else "resource_read"
+                        self.routes[name] = MCPToolRoute(spec, "", operation)
+                        self.tools.append(function)
+                        if len(self.tools) >= MAX_TOOLS:
+                            return
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
                 if client is not None:
                     client.close()
@@ -453,11 +513,29 @@ class MCPToolRouter:
         route = self.routes.get(provider_name)
         if route is None:
             raise ValueError("MCP tool is no longer available in this run.")
-        spec, original_name = route
+        spec = route.server
         client = next((item for item in self._clients if item.spec.name == spec.name), None)
         if client is None:
             raise ValueError("MCP server is unavailable in this run.")
-        result = client.call_tool(original_name, arguments)
+        if route.operation == "resources_list":
+            result = client.list_resources(arguments.get("cursor"))
+            resources = result.get("resources", [])
+            if not isinstance(resources, list):
+                raise ValueError("MCP server returned an invalid resources/list result.")
+            return _bounded_json_result({"resources": resources[:100], "nextCursor": result.get("nextCursor")})
+        if route.operation == "resource_read":
+            uri = arguments.get("uri")
+            if not isinstance(uri, str) or not uri or len(uri) > 4000:
+                raise ValueError("Provide a resource URI up to 4,000 characters.")
+            result = client.read_resource(uri)
+            contents = result.get("contents", [])
+            text_parts = []
+            if isinstance(contents, list):
+                for item in contents:
+                    if isinstance(item, dict) and isinstance(item.get("text"), str):
+                        text_parts.append(item["text"])
+            return {"uri": uri, "text": "\n".join(text_parts)[:MAX_CALL_RESULT_BYTES]}
+        result = client.call_tool(route.name, arguments)
         return normalize_call_result(result)
 
     def close(self) -> None:

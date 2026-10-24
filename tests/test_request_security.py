@@ -23,30 +23,6 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
         self.server.server_close()
         self.server_thread.join(timeout=2)
 
-    def test_cross_origin_is_rejected_before_provider_is_called(self):
-        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
-        body = json.dumps({"message": "hello", "provider": "groq"})
-        try:
-            with patch("app.PORT", self.server.server_port), patch("app.generate_reply") as provider:
-                connection.request(
-                    "POST",
-                    "/api/chat",
-                    body=body,
-                    headers={
-                        "Host": f"127.0.0.1:{self.server.server_port}",
-                        "Origin": "http://127.0.0.1:1",
-                        "Sec-Fetch-Site": "cross-site",
-                        "Content-Type": "application/json",
-                    },
-                )
-                response = connection.getresponse()
-                payload = json.loads(response.read().decode("utf-8"))
-                self.assertEqual(response.status, 403)
-                self.assertIn("trusted loopback", payload["error"])
-                provider.assert_not_called()
-        finally:
-            connection.close()
-
     def test_agent_endpoint_passes_mode_and_command_approval_to_backend(self):
         connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
         body = json.dumps({

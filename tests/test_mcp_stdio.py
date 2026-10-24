@@ -17,11 +17,15 @@ for line in sys.stdin:
     method = request.get("method")
     response = {"jsonrpc": "2.0", "id": request.get("id")}
     if method == "server/discover":
-        response["result"] = {"supportedVersions": ["2026-07-28"], "capabilities": {"tools": {}}}
+        response["result"] = {"supportedVersions": ["2026-07-28"], "capabilities": {"tools": {}, "resources": {}}}
     elif method == "tools/list":
         response["result"] = {"tools": [{"name": "echo", "description": "Echo text", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}}]}
     elif method == "tools/call":
         response["result"] = {"content": [{"type": "text", "text": "echo: " + request["params"]["arguments"]["text"]}]}
+    elif method == "resources/list":
+        response["result"] = {"resources": [{"uri": "notes://guide", "name": "guide", "mimeType": "text/plain"}]}
+    elif method == "resources/read":
+        response["result"] = {"contents": [{"uri": request["params"]["uri"], "mimeType": "text/plain", "text": "MCP resource text"}]}
     else:
         response["error"] = {"code": -32601, "message": "Method not found"}
     print(json.dumps(response), flush=True)
@@ -64,7 +68,8 @@ class MCPStdioClientTests(unittest.TestCase):
         tools, routes = discover_tools(server_env, Path.cwd())
         self.assertEqual(len(tools), 1)
         provider_name = tools[0]["function"]["name"]
-        spec, original_name = routes[provider_name]
+        route = routes[provider_name]
+        spec, original_name = route.server, route.name
         self.assertEqual(original_name, "echo")
         result = call_tool(spec, original_name, {"text": "hello"}, server_env, Path.cwd())
         return provider_name, result
@@ -78,6 +83,21 @@ class MCPStdioClientTests(unittest.TestCase):
         provider_name, result = self._discover_and_call(configured_env(LEGACY_SERVER, "legacy"))
         self.assertEqual(provider_name, "mcp__legacy__echo")
         self.assertEqual(result["text"], "legacy: hello")
+
+    def test_router_lists_and_reads_mcp_resources(self):
+        router = MCPToolRouter(configured_env(MODERN_SERVER, "modern"), Path.cwd())
+        try:
+            names = {tool["function"]["name"] for tool in router.tools}
+            list_name = "mcp__modern__resource_list"
+            read_name = "mcp__modern__resource_read"
+            self.assertIn(list_name, names)
+            self.assertIn(read_name, names)
+            listed = router.call(list_name, {})
+            self.assertIn("notes://guide", listed["resources"][0]["uri"])
+            read = router.call(read_name, {"uri": "notes://guide"})
+            self.assertEqual(read["text"], "MCP resource text")
+        finally:
+            router.close()
 
     def test_mcp_environment_does_not_inherit_provider_secrets(self):
         environment = _safe_child_environment(
@@ -127,6 +147,7 @@ class MCPStdioClientTests(unittest.TestCase):
         first_payload = json.loads(provider.call_args_list[0].args[0].data.decode())
         second_payload = json.loads(provider.call_args_list[1].args[0].data.decode())
         self.assertIn("mcp__modern__echo", {tool["function"]["name"] for tool in first_payload["tools"]})
+        self.assertIn("mcp__modern__resource_read", {tool["function"]["name"] for tool in first_payload["tools"]})
         self.assertEqual(approvals[0]["server"], "modern")
         self.assertEqual(approvals[0]["server_tool"], "echo")
         self.assertIn("echo: hello", second_payload["messages"][-1]["content"])
