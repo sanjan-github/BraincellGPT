@@ -34,6 +34,11 @@ PROTECTED_FILE_PATTERNS = (
 )
 
 
+def _is_ignored_dir(name: str) -> bool:
+    """Match ignored directory names case-insensitively, including on Windows."""
+    return name.casefold() in {directory.casefold() for directory in IGNORED_DIRS}
+
+
 def _is_protected_file(path: Path) -> bool:
     return path.name in IGNORED_FILES or any(pattern.fullmatch(path.name) or pattern.match(path.name) for pattern in PROTECTED_FILE_PATTERNS)
 
@@ -78,7 +83,7 @@ def _safe_path(root: Path, relative: str) -> Path:
         relative_parts = candidate.relative_to(root_resolved).parts
     except ValueError as exc:
         raise ValueError("Path is outside the project workspace.") from exc
-    if any(part in IGNORED_DIRS for part in relative_parts) or _is_protected_file(candidate):
+    if any(_is_ignored_dir(part) for part in relative_parts) or _is_protected_file(candidate):
         raise ValueError("Access to this project path is disabled.")
     return candidate
 
@@ -124,7 +129,7 @@ def _visible_files(root: Path, directory: str = ""):
     if not base.is_dir():
         raise ValueError("Directory does not exist.")
     for current, dirs, files in os.walk(base, followlinks=False):
-        dirs[:] = sorted(d for d in dirs if d not in IGNORED_DIRS and not (Path(current) / d).is_symlink())
+        dirs[:] = sorted(d for d in dirs if not _is_ignored_dir(d) and not (Path(current) / d).is_symlink())
         for name in sorted(files):
             path = Path(current) / name
             if not _is_protected_file(path) and not path.is_symlink():
