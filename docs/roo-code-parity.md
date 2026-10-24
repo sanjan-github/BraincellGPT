@@ -23,6 +23,9 @@ and extension-host APIs are outside this backend port.
   mutating operations.
 - Local SQLite task sessions with bounded turns, deletion, and no persisted API
   keys.
+- Configured MCP stdio tool discovery and calls, with modern and legacy protocol
+  negotiation, per-call approval, bounded JSON-RPC frames, and filtered child
+  environments.
 - Reversible file-edit checkpoints and explicit restore/redo operations.
 - OpenAI-compatible and Anthropic server-sent event parsing, incremental text
   deltas, tool progress, and a local-only streaming agent endpoint.
@@ -32,11 +35,10 @@ and extension-host APIs are outside this backend port.
 ## Remaining backend work
 
 1. Add grouped undo/history views for the existing checkpoints.
-2. Add configurable MCP stdio servers with tool/resource discovery and the same
-   approval policy.
-4. Expand provider adapters and model capability metadata, then add semantic
+2. Add MCP resource discovery/read support and remote Streamable HTTP servers.
+3. Expand provider adapters and model capability metadata, then add semantic
   conversation compaction and image inputs.
-5. Add end-to-end acceptance coverage for task persistence, approval, streaming,
+4. Add end-to-end acceptance coverage for task persistence, approval, streaming,
    and rollback.
 
 ## Current API extension
@@ -57,3 +59,23 @@ the stream. Resolve that specific action with `POST /api/agent/approvals` using
 `{ "approval_id", "session_id", "decision": "approve" | "reject" }`. The queue
 is in memory, bounded to 32 pending actions, and expires decisions after three
 minutes.
+
+Configure up to eight local MCP stdio servers in the `BRAINCELLGPT_MCP_SERVERS`
+environment variable as a JSON list. Each entry has `name`, `command`, optional
+`args`, and optional `env`; use `${VARIABLE_NAME}` in an `env` value to pass a
+specific host environment variable to that server. MCP servers are available
+for streaming Code, Debug, or Orchestrator runs. Every MCP tool call pauses for
+the same session-scoped approval operation. The adapter starts processes
+without a shell, filters inherited environment variables, and keeps each
+process only for the lifetime of one agent run.
+
+```json
+[
+  {
+    "name": "project-tools",
+    "command": "npx",
+    "args": ["-y", "@example/mcp-server"],
+    "env": {"SERVICE_TOKEN": "${PROJECT_MCP_TOKEN}"}
+  }
+]
+```

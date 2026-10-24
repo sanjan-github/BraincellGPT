@@ -34,7 +34,7 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
                     body=body,
                     headers={
                         "Host": f"127.0.0.1:{self.server.server_port}",
-                        "Origin": "http://attacker.example",
+                        "Origin": "http://127.0.0.1:1",
                         "Sec-Fetch-Site": "cross-site",
                         "Content-Type": "application/json",
                     },

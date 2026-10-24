@@ -18,6 +18,7 @@ import time
 import re
 from backend.agent import restore_checkpoint, run_agent
 from backend.agent_approvals import get_approval_registry
+from backend.mcp_stdio import MCPToolRouter
 from backend.agent_state import get_agent_store
 from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 
@@ -401,7 +402,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def send_sse_event(self, event: dict) -> None:
-        body = ("data: " + json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n\n").encode("utf-8")
+        body = ("data: " + json.dumps(event, separators=(",", ":")) + "\n\n").encode("utf-8")
         self.wfile.write(body)
         self.wfile.flush()
 
@@ -570,6 +571,7 @@ class Handler(BaseHTTPRequestHandler):
                     if not isinstance(history, list):
                         history = []
                 store.add_turn(session_id, "user", task.strip())
+                mcp_router = None
                 try:
                     streaming = route == "/api/agent/stream"
                     callback = None
@@ -586,6 +588,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_sse_event({"type": "start", "session_id": session_id})
                         callback = self.send_sse_event
                         approval_callback = lambda event: get_approval_registry().request(session_id, event, callback)
+                        mcp_router = MCPToolRouter(os.environ, ROOT, callback)
                     result = run_agent(
                         task.strip(), history, ROOT, provider, saved_key, base_url, model, os.environ,
                         allow_edits=payload.get("allow_edits") is True,
@@ -594,10 +597,14 @@ class Handler(BaseHTTPRequestHandler):
                         session_id=session_id,
                         event_callback=callback,
                         approval_callback=approval_callback,
+                        mcp_router=mcp_router,
                     )
                 except (RuntimeError, ValueError) as exc:
                     store.add_turn(session_id, "assistant", str(exc), {"error": True})
                     raise
+                finally:
+                    if mcp_router is not None:
+                        mcp_router.close()
                 result["session_id"] = session_id
                 store.update_session(session_id, provider=provider, base_url=base_url, model=model, mode=result.get("mode", mode))
                 metadata = {key: value for key, value in result.items() if key not in {"reply", "session_id"}}

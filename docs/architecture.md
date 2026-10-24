@@ -40,11 +40,12 @@ checkpoints per session in a private SQLite database under the user's local
 application-data directory. API keys are never stored in this database. The
 agent supports OpenAI-compatible and Anthropic native tool calling. Its
 server-enforced Code, Ask, Architect, Debug, and Orchestrator modes filter tools
-by capability. It can read/search files, write or apply exact-match edits, run
-workspace commands when the request explicitly enables them, maintain a task
-checklist, ask a follow-up, switch modes, and delegate bounded subtasks. Tool
-rounds, command timeouts and output, file sizes, diff previews, search results,
-and workspace paths are bounded.
+by capability. It can read/search files, preview and apply exact-match edits,
+run workspace commands behind request-level opt-in or streaming per-call
+approval, maintain a task checklist, ask a follow-up, switch modes, and delegate
+bounded subtasks. Configured MCP tools use per-call approval too. Tool rounds,
+command timeouts and output, file sizes, diff previews, search results, and
+workspace paths are bounded.
 
 Roo Code parity work and remaining scope are tracked in
 [`roo-code-parity.md`](roo-code-parity.md).
@@ -53,7 +54,10 @@ Roo Code parity work and remaining scope are tracked in
 
 - Agent session history is stored server-side in the local SQLite database;
   ordinary chat history remains browser-managed.
-- There is no authentication or MCP server integration.
+- The local API has no authentication and remains restricted to trusted loopback
+  requests.
+- MCP stdio tool discovery and calls are supported for streaming runs; resource
+  operations and remote Streamable HTTP MCP servers are not implemented yet.
 - Non-streaming tool approval remains request-level; streaming agent calls also
   support a bounded per-tool approval queue. Streaming progress and checkpoint
   restore are implemented.
