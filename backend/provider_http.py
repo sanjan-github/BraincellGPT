@@ -4,6 +4,7 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import socket
+import ssl
 import urllib.request
 
 
@@ -88,7 +89,8 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 
 class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
     def __init__(self, addresses):
-        super().__init__()
+        # Make the certificate-verifying context explicit across Python versions.
+        super().__init__(context=ssl.create_default_context())
         self._validated_addresses = addresses
 
     def https_open(self, request):
