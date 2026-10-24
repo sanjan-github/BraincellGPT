@@ -32,14 +32,25 @@ _rate_events: dict[str, deque[float]] = defaultdict(deque)
 _rate_lock = Lock()
 _profile_secrets: dict[str, str] = {}
 _profile_secrets_lock = Lock()
+MAX_RATE_BUCKETS = 2048
+MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
+MAX_CONCURRENT_PROVIDER_REQUESTS = 8
+_provider_slots = __import__("threading").BoundedSemaphore(MAX_CONCURRENT_PROVIDER_REQUESTS)
 
 
 def rate_limited(client_ip: str) -> bool:
     now = time.monotonic()
     with _rate_lock:
+        # Bound the dictionary as well as each individual event queue.
+        for key in list(_rate_events):
+            events = _rate_events[key]
+            while events and now - events[0] > RATE_WINDOW_SECONDS:
+                events.popleft()
+            if not events:
+                _rate_events.pop(key, None)
+        if client_ip not in _rate_events and len(_rate_events) >= MAX_RATE_BUCKETS:
+            return True
         events = _rate_events[client_ip]
-        while events and now - events[0] > RATE_WINDOW_SECONDS:
-            events.popleft()
         if len(events) >= RATE_LIMIT:
             return True
         events.append(now)
@@ -53,7 +64,10 @@ def trim_history(history: list[dict], max_items: int = MAX_HISTORY_MESSAGES, max
     for item in reversed(history):
         if not isinstance(item, dict) or item.get("role") not in ("user", "assistant"):
             continue
-        content = str(item.get("content", "")).strip()
+        raw_content = item.get("content")
+        if not isinstance(raw_content, str):
+            continue
+        content = raw_content.strip()
         if not content:
             continue
         content = content[-max_item_chars:]
@@ -108,7 +122,12 @@ def load_dotenv() -> None:
 
 load_dotenv()
 # Resolve PORT after dotenv so a PORT entry in .env is respected.
-PORT = int(os.environ.get("PORT", "8000"))
+try:
+    PORT = int(os.environ.get("PORT", "8000"))
+except (TypeError, ValueError) as exc:
+    raise RuntimeError("PORT must be an integer between 1 and 65535.") from exc
+if not 1 <= PORT <= 65535:
+    raise RuntimeError("PORT must be an integer between 1 and 65535.")
 
 
 # Small provider registry: shared OpenAI-compatible request format, provider-specific defaults.
@@ -181,6 +200,17 @@ def extract_provider_reply(data: object, protocol: str, label: str) -> str:
     if not reply.strip():
         raise RuntimeError(label + " returned an empty response.")
     return reply.strip()
+
+
+def _read_provider_json(response, label: str) -> object:
+    """Read a bounded provider response and parse JSON."""
+    raw = response.read(MAX_PROVIDER_RESPONSE_BYTES + 1)
+    if len(raw) > MAX_PROVIDER_RESPONSE_BYTES:
+        raise RuntimeError(label + " returned a response larger than the 2 MB limit.")
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(label + " returned an invalid JSON response.") from exc
 
 
 def generate_reply(message: str, history: list[dict], personality: str, provider: str = "groq", user_api_key: str = "", base_url: str = "", model_override: str = "") -> str:
@@ -264,8 +294,13 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         payload = {"model": model, "messages": messages, "temperature": 0.7, "max_tokens": 1200}
     request = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        if not _provider_slots.acquire(timeout=2):
+            raise RuntimeError("BrainCellGPT is busy handling other provider requests. Try again shortly.")
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                data = _read_provider_json(response, label)
+        finally:
+            _provider_slots.release()
     except json.JSONDecodeError as exc:
         raise RuntimeError(label + " returned an invalid JSON response.") from exc
     except urllib.error.HTTPError as exc:
@@ -340,6 +375,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": ["groq", "openai", "anthropic", "openrouter", "nvidia_nim", "deepseek", "mistral", "xai", "together", "fireworks", "cerebras", "ollama", "lmstudio", "custom"]})
             return
         elif path == "/api/profile-secret-status":
+            if self.client_address[0] not in ("127.0.0.1", "::1"):
+                self.send_json(403, {"error": "This local app only accepts requests from this computer."})
+                return
+            if rate_limited(self.client_address[0] + ":profile-secret-status"):
+                self.send_json(429, {"error": "Too many requests. Wait a minute and try again."})
+                return
             profile_id = parse_qs(urlparse(self.path).query).get("id", [""])[0]
             if not re.fullmatch(r"[a-zA-Z0-9_-]{8,80}", profile_id):
                 self.send_json(400, {"error": "Invalid profile ID."})
@@ -459,7 +500,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(502, {"error": str(exc)})
         except ValueError as exc:
             self.send_json(400, {"error": str(exc)})
-        except Exception:
+        except Exception as exc:
+            # Log the exception type for diagnosis without returning internals to clients.
+            print(f"[BrainCellGPT] request failed: {type(exc).__name__}")
             self.send_json(500, {"error": "Unexpected server error. Check the terminal for details."})
 
     def log_message(self, format: str, *args) -> None:
