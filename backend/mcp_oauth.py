@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from backend.provider_http import PROVIDER_SLOTS, open_provider_request, resolve_public_addresses
+from backend.secure_store import delete_secret, get_secret, set_secret
 
 
 MAX_OAUTH_METADATA_BYTES = 256_000
@@ -177,6 +178,12 @@ def _register_client(metadata: dict, issuer: str, redirect_uri: str, configured_
     with _TOKEN_LOCK:
         if cache_key in _CLIENT_IDS:
             return _CLIENT_IDS[cache_key]
+    client_store_key = _client_store_key(issuer, redirect_uri)
+    stored_client_id = get_secret(client_store_key)
+    if isinstance(stored_client_id, str) and stored_client_id and len(stored_client_id) <= 1000:
+        with _TOKEN_LOCK:
+            _CLIENT_IDS[cache_key] = stored_client_id
+        return stored_client_id
     registration_endpoint = metadata.get("registration_endpoint")
     if not registration_endpoint:
         raise ValueError("This OAuth server needs a pre-registered client_id or a dynamic registration endpoint.")
@@ -194,7 +201,56 @@ def _register_client(metadata: dict, issuer: str, redirect_uri: str, configured_
         raise ValueError("OAuth dynamic client registration returned an invalid client ID.")
     with _TOKEN_LOCK:
         _CLIENT_IDS[cache_key] = client_id
+    set_secret(client_store_key, client_id)
     return client_id
+
+
+def _client_store_key(issuer: str, redirect_uri: str) -> str:
+    identity = hashlib.sha256((issuer + "\n" + redirect_uri).encode("utf-8")).hexdigest()
+    return "mcp.oauth.client." + identity
+
+
+def _token_store_key(server_url: str) -> str:
+    return "mcp.oauth.token." + hashlib.sha256(server_url.encode("utf-8")).hexdigest()
+
+
+def _load_stored_token(server_url: str) -> dict[str, Any] | None:
+    raw = get_secret(_token_store_key(server_url))
+    if not isinstance(raw, str) or len(raw) > 64_000:
+        return None
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    required = ("access_token", "client_id", "token_endpoint", "resource", "expires_at")
+    if not isinstance(value, dict) or any(key not in value for key in required):
+        return None
+    if (not isinstance(value["access_token"], str) or not value["access_token"] or len(value["access_token"]) > MAX_OAUTH_TOKEN_BYTES
+            or not isinstance(value["client_id"], str) or not isinstance(value["token_endpoint"], str)
+            or value["resource"] != server_url or type(value["expires_at"]) not in (int, float)):
+        return None
+    try:
+        endpoint = urlsplit(value["token_endpoint"])
+        if endpoint.scheme != "https" or not endpoint.hostname or endpoint.username or endpoint.password or endpoint.fragment:
+            return None
+        refresh = value.get("refresh_token")
+        scope = value.get("scope", "")
+        if refresh is not None and (not isinstance(refresh, str) or len(refresh) > MAX_OAUTH_TOKEN_BYTES):
+            return None
+        if not isinstance(scope, str) or len(scope) > 2000:
+            return None
+    except (ValueError, TypeError):
+        return None
+    return value
+
+
+def _persist_token(server_url: str, token: dict[str, Any]) -> None:
+    try:
+        encoded = json.dumps(token, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) <= 64_000:
+            set_secret(_token_store_key(server_url), encoded)
+    except (TypeError, ValueError, UnicodeError):
+        pass
 
 
 def _validate_token(value: dict, previous: dict | None = None) -> dict:
@@ -249,6 +305,11 @@ def _access_token_once(server_url: str, challenge: str | None, callback_port: in
     cached = None
     with _TOKEN_LOCK:
         cached = _TOKENS.get(server_key)
+    if cached is None:
+        cached = _load_stored_token(server_key)
+        if cached is not None:
+            with _TOKEN_LOCK:
+                _TOKENS[server_key] = cached
     if cached and not force_reauthorize:
         if cached["expires_at"] > time.time() + 60 and not force_refresh:
             return cached["access_token"]
@@ -256,6 +317,7 @@ def _access_token_once(server_url: str, challenge: str | None, callback_port: in
         if refreshed:
             with _TOKEN_LOCK:
                 _TOKENS[server_key] = refreshed
+            _persist_token(server_key, refreshed)
             return refreshed["access_token"]
 
     resource_metadata, metadata, issuer = _discover(server_url, challenge)
@@ -325,6 +387,7 @@ def _access_token_once(server_url: str, challenge: str | None, callback_port: in
     }
     with _TOKEN_LOCK:
         _TOKENS[server_key] = token_state
+    _persist_token(server_key, token_state)
     return token_state["access_token"]
 
 
@@ -389,3 +452,13 @@ def clear_tokens() -> None:
         _CLIENT_IDS.clear()
         _FLOW_LOCKS.clear()
         _PENDING.clear()
+
+
+def forget_server(server_url: str) -> bool:
+    """Remove cached and OS-stored tokens for one configured MCP resource."""
+    with _TOKEN_LOCK:
+        flow_lock = _FLOW_LOCKS.setdefault(server_url, threading.Lock())
+    with flow_lock:
+        with _TOKEN_LOCK:
+            _TOKENS.pop(server_url, None)
+        return delete_secret(_token_store_key(server_url))

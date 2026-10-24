@@ -18,8 +18,8 @@ import time
 import re
 from backend.agent import restore_checkpoint, restore_checkpoint_group, run_agent
 from backend.agent_approvals import get_approval_registry
-from backend.mcp_stdio import MCPToolRouter
-from backend.mcp_oauth import complete_callback as complete_mcp_oauth_callback
+from backend.mcp_stdio import MCPToolRouter, load_server_specs
+from backend.mcp_oauth import complete_callback as complete_mcp_oauth_callback, forget_server as forget_mcp_oauth_server
 from backend.agent_state import get_agent_store
 from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 from backend.media import anthropic_content, normalize_images, openai_content
@@ -509,7 +509,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = urlparse(self.path).path
-        if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/agent", "/api/agent/stream", "/api/agent/approvals", "/api/agent/restore"):
+        if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/agent", "/api/agent/stream", "/api/agent/approvals", "/api/agent/restore", "/api/mcp/oauth/disconnect"):
             self.send_json(404, {"error": "Not found"})
             return
         if self.client_address[0] not in ("127.0.0.1", "::1") or not self.is_trusted_local_request():
@@ -547,6 +547,22 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         _profile_secrets.pop(profile_id, None)
                 self.send_json(200, {"ok": True, "configured": bool(api_key.strip())})
+                return
+            if route == "/api/mcp/oauth/disconnect":
+                server_name = payload.get("server", "")
+                if not isinstance(server_name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", server_name):
+                    self.send_json(400, {"error": "Provide a valid configured MCP server name."})
+                    return
+                try:
+                    server = next((item for item in load_server_specs(os.environ) if item.name == server_name and item.url), None)
+                except ValueError as exc:
+                    self.send_json(400, {"error": str(exc)})
+                    return
+                if server is None:
+                    self.send_json(404, {"error": "Configured remote MCP server was not found."})
+                    return
+                persistent = forget_mcp_oauth_server(server.url)
+                self.send_json(200, {"disconnected": True, "persistent_credentials_cleared": persistent})
                 return
             if route == "/api/agent/approvals":
                 approval_id = payload.get("approval_id", "")

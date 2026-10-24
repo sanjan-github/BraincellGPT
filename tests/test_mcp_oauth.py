@@ -14,9 +14,15 @@ from backend.mcp_stdio import MCPServerSpec, _StreamableHTTPClient
 class MCPOAuthFlowTests(unittest.TestCase):
     def setUp(self):
         mcp_oauth.clear_tokens()
+        self.store_get_patcher = patch("backend.mcp_oauth.get_secret", return_value=None)
+        self.store_set_patcher = patch("backend.mcp_oauth.set_secret", return_value=True)
+        self.store_get_patcher.start()
+        self.store_set_patcher.start()
 
     def tearDown(self):
         mcp_oauth.clear_tokens()
+        self.store_get_patcher.stop()
+        self.store_set_patcher.stop()
 
     def test_authorization_code_flow_uses_state_pkce_and_resource_binding(self):
         resource = {"resource": "https://mcp.example.test/mcp", "authorization_servers": ["https://auth.example.test"], "scopes_supported": ["files:read"]}
@@ -85,9 +91,42 @@ class MCPOAuthFlowTests(unittest.TestCase):
         self.assertEqual(token, "fresh-access")
         self.assertEqual(request.call_args.args[1]["grant_type"], "refresh_token")
 
+    def test_refreshed_token_is_persisted_and_reloaded_from_secure_store(self):
+        server = "https://mcp.example.test/mcp"
+        records = {}
+        def read_record(name):
+            return records.get(name)
+        def write_record(name, value):
+            records[name] = value
+            return True
+
+        mcp_oauth._TOKENS[server] = {
+            "access_token": "old-access", "refresh_token": "old-refresh", "expires_at": time.time() - 1,
+            "client_id": "client", "token_endpoint": "https://auth.example.test/token", "resource": server,
+            "scope": "read",
+        }
+        with patch("backend.mcp_oauth.get_secret", side_effect=read_record), \
+             patch("backend.mcp_oauth.set_secret", side_effect=write_record), \
+             patch("backend.mcp_oauth._request_json", return_value={
+                 "access_token": "persisted-access", "refresh_token": "rotated-refresh", "expires_in": 600,
+             }):
+            self.assertEqual(mcp_oauth.access_token(server, None, 8765), "persisted-access")
+            mcp_oauth.clear_tokens()
+            self.assertEqual(mcp_oauth.access_token(server, None, 8765), "persisted-access")
+        saved = json.loads(records[mcp_oauth._token_store_key(server)])
+        self.assertEqual(saved["refresh_token"], "rotated-refresh")
+
     def test_callback_rejects_unknown_state(self):
         with self.assertRaisesRegex(ValueError, "state is invalid"):
             mcp_oauth.complete_callback({"state": ["unknown"], "code": ["code"]})
+
+    def test_forget_server_clears_memory_and_delegates_secure_store_deletion(self):
+        server = "https://mcp.example.test/mcp"
+        mcp_oauth._TOKENS[server] = {"access_token": "secret"}
+        with patch("backend.mcp_oauth.delete_secret", return_value=True) as delete:
+            self.assertTrue(mcp_oauth.forget_server(server))
+        self.assertNotIn(server, mcp_oauth._TOKENS)
+        delete.assert_called_once_with(mcp_oauth._token_store_key(server))
 
     def test_oauth_metadata_urls_reject_non_https_and_private_hosts(self):
         with self.assertRaisesRegex(ValueError, "public HTTPS"):

@@ -35,7 +35,8 @@ and extension-host APIs are outside this backend port.
 - Remote MCP OAuth resource and authorization-server discovery, dynamic or
   pre-registered public-client authorization-code flow with PKCE S256, resource
   indicators, access-token refresh, insufficient-scope step-up, and loopback
-  callbacks. Access and refresh tokens remain in process memory.
+  callbacks. Tokens use native OS-protected credential storage when available;
+  there is no plaintext fallback.
 - Reversible file-edit checkpoints and explicit restore/redo operations.
 - Per-agent-run grouped checkpoint history with multi-file restore and redo groups.
 - OpenAI-compatible and Anthropic server-sent event parsing, incremental text
@@ -47,8 +48,8 @@ and extension-host APIs are outside this backend port.
 
 ## Remaining backend work
 
-1. Add persistent OS credential-store support and OAuth Client ID Metadata
-   Documents for remote MCP authorization.
+1. Add OAuth Client ID Metadata Documents and broaden credential-store
+   validation across supported desktop platforms.
 2. Expand provider adapters and model capability metadata.
 3. Add end-to-end acceptance coverage for OAuth callback, task persistence,
    approval, streaming,
@@ -66,6 +67,10 @@ Inspect grouped snapshots in the `checkpoint_groups` field returned for a
 session. Restore an individual file snapshot or a complete agent-run group with
 `POST /api/agent/restore` and `allow_edits: true`; provide either
 `checkpoint_id` or `group_id`. Group restore creates a corresponding redo group.
+Disconnect a remote MCP authorization with
+`POST /api/mcp/oauth/disconnect` and `{ "server": "configured-server-name" }`;
+this clears its in-memory token and reports whether persistent OS credentials
+were removed.
 Use `POST /api/agent/stream` with the same JSON body for a server-sent event
 stream. JSON `data:` frames report `start`, `text_delta`, `tool_start`,
 `approval_required`, `tool_result`, `context_compacting`,
@@ -96,7 +101,12 @@ and the MCP URL as the OAuth `resource`, then retries after the loopback callbac
 Configure `oauth.client_id` for a pre-registered public client; otherwise the
 client uses the authorization server's dynamic registration endpoint. OAuth
 tokens are held only in memory and must be authorized again after restarting the
-app. Remote URLs and OAuth endpoints must resolve only to public IP addresses.
+app. Windows tokens use DPAPI-protected files. Linux uses Secret Service through
+`secret-tool` or a supported keyring backend. macOS Keychain support is
+available when the optional `keyring` package is installed. If the OS store is
+unavailable, tokens stay in process memory and must be authorized again after
+app restart; no plaintext fallback is used. Remote URLs and OAuth endpoints
+must resolve only to public IP addresses.
 MCP servers are available for streaming Code, Debug, or Orchestrator runs. Every
 MCP tool call pauses for the same session-scoped approval operation. Local
 processes start without a shell and with filtered environments, and remain alive

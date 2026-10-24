@@ -73,6 +73,28 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
             mcp_oauth._PENDING.pop(state, None)
             connection.close()
 
+    def test_oauth_disconnect_removes_configured_server_credentials(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        config = {"BRAINCELLGPT_MCP_SERVERS": json.dumps([{
+            "name": "remote-tools", "url": "https://mcp.example.test/mcp",
+        }])}
+        try:
+            with patch("app.PORT", self.server.server_port), patch.dict("os.environ", config), patch(
+                "app.forget_mcp_oauth_server", return_value=True,
+            ) as forget:
+                connection.request(
+                    "POST", "/api/mcp/oauth/disconnect", body=json.dumps({"server": "remote-tools"}),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                result = json.loads(response.read().decode())
+            self.assertEqual(response.status, 200)
+            self.assertTrue(result["disconnected"])
+            self.assertTrue(result["persistent_credentials_cleared"])
+            forget.assert_called_once_with("https://mcp.example.test/mcp")
+        finally:
+            connection.close()
+
     def test_agent_endpoint_passes_mode_and_command_approval_to_backend(self):
         connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
         body = json.dumps({
