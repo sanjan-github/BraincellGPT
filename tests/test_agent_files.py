@@ -29,7 +29,7 @@ class AgentWorkspaceSafetyTests(unittest.TestCase):
         }
         for name, value in protected.items():
             (self.root / name).write_text(value, encoding="utf-8")
-        for directory in (".ssh", ".aws", ".azure", ".gnupg", ".kube"):
+        for directory in (".ssh", ".aws", ".azure", ".gnupg", ".kube", ".SSH", ".AWS", ".GIT"):
             sensitive_dir = self.root / directory
             sensitive_dir.mkdir()
             (sensitive_dir / "config").write_text("needle-protected", encoding="utf-8")
