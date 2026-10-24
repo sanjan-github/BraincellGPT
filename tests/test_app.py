@@ -2,6 +2,8 @@ import email.message
 import io
 import json
 import os
+import subprocess
+import sys
 import unittest
 import urllib.error
 from unittest.mock import MagicMock, patch
@@ -80,8 +82,20 @@ class ProviderConfigurationTests(unittest.TestCase):
         self.assertEqual(app.trim_history(history), [{"role": "user", "content": "valid"}])
 
     def test_invalid_port_fails_fast(self):
-        # PORT parsing is validated at import time; this behaviour is covered by CI syntax/import checks.
-        pass
+        for port in ("abc", "0", "65536", "-1"):
+            with self.subTest(port=port):
+                env = os.environ.copy()
+                env["PORT"] = port
+                result = subprocess.run(
+                    [sys.executable, "-c", "import app"],
+                    cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("PORT must be an integer between 1 and 65535", result.stderr)
 
 
 class PersonalityPromptTests(unittest.TestCase):
