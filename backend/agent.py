@@ -10,19 +10,18 @@ import os
 import urllib.error
 import urllib.request
 import re
-from threading import BoundedSemaphore
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from backend.provider_http import open_provider_request, resolve_public_addresses
+from backend.provider_http import PROVIDER_SLOTS, open_provider_request, resolve_public_addresses
 
 
 MAX_FILE_BYTES = 200_000
 MAX_TOOL_RESULT = 24_000
 MAX_STEPS = 8
 MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
-_PROVIDER_SLOTS = BoundedSemaphore(8)
+_PROVIDER_SLOTS = PROVIDER_SLOTS
 IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build", ".idea", ".vscode"}
 IGNORED_FILES = {".env", ".env.local"}
 PROTECTED_FILE_PATTERNS = (
@@ -76,7 +75,7 @@ def _visible_files(root: Path, directory: str = ""):
         dirs[:] = sorted(d for d in dirs if d not in IGNORED_DIRS and not (Path(current) / d).is_symlink())
         for name in sorted(files):
             path = Path(current) / name
-            if name not in IGNORED_FILES and not path.is_symlink():
+            if not _is_protected_file(path) and not path.is_symlink():
                 yield path
 
 
