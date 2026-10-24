@@ -9,6 +9,53 @@ from backend import secure_store
 
 
 class SecureStoreTests(unittest.TestCase):
+    def test_native_keyring_backends_are_selected_for_supported_platforms(self):
+        macos_backend = type("MacOSKeyring", (), {})
+        macos_backend.__module__ = "keyring.backends.macOS"
+        linux_backend = type("SecretServiceKeyring", (), {})
+        linux_backend.__module__ = "keyring.backends.SecretService"
+        plain_backend = type("PlaintextKeyring", (), {})
+        plain_backend.__module__ = "keyring.backends.fail"
+        for platform, backend, expected in (
+            ("darwin", macos_backend(), True),
+            ("linux", linux_backend(), True),
+            ("darwin", plain_backend(), False),
+            ("linux", plain_backend(), False),
+        ):
+            fake_keyring = MagicMock()
+            fake_keyring.get_keyring.return_value = backend
+            with self.subTest(platform=platform, backend=type(backend).__module__), \
+                 patch("backend.secure_store.sys.platform", platform), \
+                 patch.dict("sys.modules", {"keyring": fake_keyring}):
+                selected = secure_store._keyring_backend()
+                self.assertEqual(selected is not None, expected)
+                if expected:
+                    self.assertIs(selected, fake_keyring)
+
+    def test_native_keyring_secret_lifecycle_uses_hashed_account(self):
+        fake_keyring = MagicMock()
+        fake_keyring.get_password.return_value = "protected-token"
+        with patch("backend.secure_store.sys.platform", "darwin"), \
+             patch("backend.secure_store._keyring_backend", return_value=fake_keyring):
+            self.assertTrue(secure_store.set_secret("oauth-token", "protected-token"))
+            self.assertEqual(secure_store.get_secret("oauth-token"), "protected-token")
+            self.assertTrue(secure_store.delete_secret("oauth-token"))
+        account = secure_store._account_name("oauth-token")
+        fake_keyring.set_password.assert_called_once_with(secure_store.SERVICE_NAME, account, "protected-token")
+        fake_keyring.get_password.assert_called_once_with(secure_store.SERVICE_NAME, account)
+        fake_keyring.delete_password.assert_called_once_with(secure_store.SERVICE_NAME, account)
+
+    def test_native_keyring_errors_do_not_fall_back_to_plaintext(self):
+        fake_keyring = MagicMock()
+        fake_keyring.set_password.side_effect = RuntimeError("Keychain is locked")
+        fake_keyring.get_password.side_effect = RuntimeError("Keychain is locked")
+        fake_keyring.delete_password.side_effect = RuntimeError("Keychain is locked")
+        with patch("backend.secure_store.sys.platform", "darwin"), \
+             patch("backend.secure_store._keyring_backend", return_value=fake_keyring):
+            self.assertFalse(secure_store.set_secret("oauth-token", "protected-token"))
+            self.assertIsNone(secure_store.get_secret("oauth-token"))
+            self.assertFalse(secure_store.delete_secret("oauth-token"))
+
     def test_account_names_are_hashed_before_os_store_calls(self):
         account = secure_store._account_name("mcp.oauth.token.https://mcp.example.test")
         self.assertRegex(account, r"^[0-9a-f]{64}$")
