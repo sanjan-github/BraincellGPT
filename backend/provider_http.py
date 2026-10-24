@@ -6,6 +6,12 @@ import ipaddress
 import socket
 import ssl
 import urllib.request
+from threading import BoundedSemaphore
+
+
+# One process-wide cap shared by chat and coding-agent provider requests.
+MAX_CONCURRENT_PROVIDER_REQUESTS = 8
+PROVIDER_SLOTS = BoundedSemaphore(MAX_CONCURRENT_PROVIDER_REQUESTS)
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
