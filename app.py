@@ -17,7 +17,7 @@ from threading import Lock
 import time
 import re
 from backend.agent import run_agent
-from backend.provider_http import open_provider_request, resolve_public_addresses
+from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, PROVIDER_SLOTS, open_provider_request, resolve_public_addresses
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
@@ -33,8 +33,7 @@ _profile_secrets: dict[str, str] = {}
 _profile_secrets_lock = Lock()
 MAX_RATE_BUCKETS = 2048
 MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
-MAX_CONCURRENT_PROVIDER_REQUESTS = 8
-_provider_slots = __import__("threading").BoundedSemaphore(MAX_CONCURRENT_PROVIDER_REQUESTS)
+_provider_slots = PROVIDER_SLOTS
 
 
 def rate_limited(client_ip: str) -> bool:
