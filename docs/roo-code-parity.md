@@ -32,6 +32,10 @@ and extension-host APIs are outside this backend port.
   with modern stateless and legacy session negotiation, pinned public HTTPS
   destinations, redirect rejection, environment-backed request headers, and
   `x-mcp-header` tool parameter mirroring with schema validation.
+- Remote MCP OAuth resource and authorization-server discovery, dynamic or
+  pre-registered public-client authorization-code flow with PKCE S256, resource
+  indicators, access-token refresh, insufficient-scope step-up, and loopback
+  callbacks. Access and refresh tokens remain in process memory.
 - Reversible file-edit checkpoints and explicit restore/redo operations.
 - Per-agent-run grouped checkpoint history with multi-file restore and redo groups.
 - OpenAI-compatible and Anthropic server-sent event parsing, incremental text
@@ -43,10 +47,11 @@ and extension-host APIs are outside this backend port.
 
 ## Remaining backend work
 
-1. Add OAuth 2.1 authorization discovery, token lifecycle, and reauthorization
-   for remote MCP servers; configured bearer/API-key headers are supported now.
+1. Add persistent OS credential-store support and OAuth Client ID Metadata
+   Documents for remote MCP authorization.
 2. Expand provider adapters and model capability metadata.
-3. Add end-to-end acceptance coverage for task persistence, approval, streaming,
+3. Add end-to-end acceptance coverage for OAuth callback, task persistence,
+   approval, streaming,
    and rollback.
 
 ## Current API extension
@@ -63,8 +68,9 @@ session. Restore an individual file snapshot or a complete agent-run group with
 `checkpoint_id` or `group_id`. Group restore creates a corresponding redo group.
 Use `POST /api/agent/stream` with the same JSON body for a server-sent event
 stream. JSON `data:` frames report `start`, `text_delta`, `tool_start`,
-`approval_required`, `tool_result`, `context_compacting`, `done`, or `error`; `done` carries the
-standard agent result.
+`approval_required`, `tool_result`, `context_compacting`,
+`oauth_authorization_required`, `done`, or `error`; `done` carries the standard
+agent result.
 Mutating tools emit `approval_required` with a bounded action preview and pause
 the stream. Resolve that specific action with `POST /api/agent/approvals` using
 `{ "approval_id", "session_id", "decision": "approve" | "reject" }`. The queue
@@ -82,13 +88,20 @@ Configure up to eight local or remote MCP servers in the
 has `name`, `command`, optional `args`, and optional `env`; use
 `${VARIABLE_NAME}` in an `env` value to pass a specific host environment
 variable to that process. A remote entry has an HTTPS `url` and optional
-`headers`; credential headers must reference environment variables, such as
-`"Authorization": "Bearer ${MCP_ACCESS_TOKEN}"`. Remote URLs must resolve only
-to public IP addresses. MCP servers are available for streaming Code, Debug,
-or Orchestrator runs. Every MCP tool call pauses for the same session-scoped
-approval operation. Local processes start without a shell and with filtered
-environments, and remain alive only during one agent run. Remote calls use the
-configured URL's validated IP addresses for that run and do not follow redirects.
+`headers` and `oauth`; credential headers must reference environment variables,
+such as `"Authorization": "Bearer ${MCP_ACCESS_TOKEN}"`. If no Authorization
+header is configured, a 401 response starts OAuth automatically. The client
+discovers protected-resource and authorization-server metadata, uses PKCE S256
+and the MCP URL as the OAuth `resource`, then retries after the loopback callback.
+Configure `oauth.client_id` for a pre-registered public client; otherwise the
+client uses the authorization server's dynamic registration endpoint. OAuth
+tokens are held only in memory and must be authorized again after restarting the
+app. Remote URLs and OAuth endpoints must resolve only to public IP addresses.
+MCP servers are available for streaming Code, Debug, or Orchestrator runs. Every
+MCP tool call pauses for the same session-scoped approval operation. Local
+processes start without a shell and with filtered environments, and remain alive
+only during one agent run. Remote calls use validated IP addresses and do not
+follow redirects.
 
 ```json
 [
@@ -108,7 +121,7 @@ Remote server example:
   {
     "name": "remote-tools",
     "url": "https://mcp.example.com/mcp",
-    "headers": {"Authorization": "Bearer ${MCP_ACCESS_TOKEN}"}
+    "oauth": {"client_id": "registered-public-client"}
   }
 ]
 ```

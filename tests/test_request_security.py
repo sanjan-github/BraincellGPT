@@ -10,6 +10,7 @@ from unittest.mock import patch
 import app
 from backend.agent_state import AgentStore
 from backend.agent_approvals import ApprovalRegistry
+from backend import mcp_oauth
 
 
 class RequestSecurityIntegrationTests(unittest.TestCase):
@@ -46,6 +47,31 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
         self.assertEqual(request.response[0], 403)
         self.assertIn("trusted loopback", request.response[1]["error"])
         provider.assert_not_called()
+
+    def test_oauth_loopback_callback_accepts_state_bound_cross_site_redirect(self):
+        state = "oauth-test-state"
+        mcp_oauth._PENDING[state] = mcp_oauth._PendingAuthorization(
+            "https://mcp.example.test/mcp", "https://auth.example.test/token", "client",
+            f"http://127.0.0.1:{self.server.server_port}/api/mcp/oauth/callback",
+            "pkce-verifier", "https://mcp.example.test/mcp", "",
+        )
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        try:
+            with patch("app.PORT", self.server.server_port), patch(
+                "backend.mcp_oauth._request_json", return_value={"access_token": "callback-token"}
+            ):
+                connection.request(
+                    "GET", f"/api/mcp/oauth/callback?state={state}&code=one-time-code",
+                    headers={"Host": f"127.0.0.1:{self.server.server_port}", "Sec-Fetch-Site": "cross-site"},
+                )
+                response = connection.getresponse()
+                body = response.read().decode()
+            self.assertEqual(response.status, 200)
+            self.assertIn("Authorization complete", body)
+            self.assertEqual(mcp_oauth._PENDING[state].token["access_token"], "callback-token")
+        finally:
+            mcp_oauth._PENDING.pop(state, None)
+            connection.close()
 
     def test_agent_endpoint_passes_mode_and_command_approval_to_backend(self):
         connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)

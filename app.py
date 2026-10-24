@@ -19,6 +19,7 @@ import re
 from backend.agent import restore_checkpoint, restore_checkpoint_group, run_agent
 from backend.agent_approvals import get_approval_registry
 from backend.mcp_stdio import MCPToolRouter
+from backend.mcp_oauth import complete_callback as complete_mcp_oauth_callback
 from backend.agent_state import get_agent_store
 from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 from backend.media import anthropic_content, normalize_images, openai_content
@@ -363,7 +364,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
 class Handler(BaseHTTPRequestHandler):
     server_version = "BrainCellGPT/0.1"
 
-    def is_trusted_local_request(self) -> bool:
+    def is_trusted_local_request(self, allow_cross_site_redirect: bool = False) -> bool:
         """Reject non-loopback hosts and cross-origin browser requests."""
         host = self.headers.get("Host", "")
         try:
@@ -380,7 +381,7 @@ class Handler(BaseHTTPRequestHandler):
                     return False
             except ValueError:
                 return False
-        if self.headers.get("Sec-Fetch-Site", "").lower() in ("cross-site", "same-site"):
+        if not allow_cross_site_redirect and self.headers.get("Sec-Fetch-Site", "").lower() in ("cross-site", "same-site"):
             # Local app UI is same-origin; cross-site and sibling-origin browser requests are not needed.
             origin = self.headers.get("Origin", "")
             if not origin:
@@ -425,6 +426,29 @@ class Handler(BaseHTTPRequestHandler):
             content_type = "image/jpeg"
         elif path == "/health":
             self.send_json(200, {"status": "ok", "service": "braincellgpt", "providers": ["groq", "openai", "anthropic", "openrouter", "nvidia_nim", "deepseek", "mistral", "xai", "together", "fireworks", "cerebras", "ollama", "lmstudio", "custom"]})
+            return
+        elif path == "/api/mcp/oauth/callback":
+            if self.client_address[0] not in ("127.0.0.1", "::1") or not self.is_trusted_local_request(allow_cross_site_redirect=True):
+                self.send_json(403, {"error": "This local app only accepts trusted loopback requests."})
+                return
+            if rate_limited(self.client_address[0] + ":mcp-oauth-callback"):
+                self.send_json(429, {"error": "Too many authorization callbacks. Wait a minute and try again."})
+                return
+            try:
+                query = parse_qs(urlparse(self.path).query, max_num_fields=10)
+                complete_mcp_oauth_callback(query)
+            except (ValueError, OSError, urllib.error.URLError):
+                self.send_response(400)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(b"<!doctype html><title>Authorization failed</title><p>Authorization could not be completed. Return to BrainCellGPT and retry.</p>")
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(b"<!doctype html><title>Authorization complete</title><p>Authorization complete. You can close this tab and return to BrainCellGPT.</p>")
             return
         elif path == "/api/profile-secret-status":
             if not self.is_trusted_local_request() or self.client_address[0] not in ("127.0.0.1", "::1"):
@@ -598,7 +622,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_sse_event({"type": "start", "session_id": session_id})
                         callback = self.send_sse_event
                         approval_callback = lambda event: get_approval_registry().request(session_id, event, callback)
-                        mcp_router = MCPToolRouter(os.environ, ROOT, callback)
+                        mcp_router = MCPToolRouter(os.environ, ROOT, callback, oauth_port=PORT)
                     result = run_agent(
                         task.strip(), history, ROOT, provider, saved_key, base_url, model, os.environ,
                         allow_edits=payload.get("allow_edits") is True,
@@ -720,6 +744,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"deleted": True})
 
     def log_message(self, format: str, *args) -> None:
+        if args and "/api/mcp/oauth/callback" in str(args[0]):
+            print(f"[BrainCellGPT] {self.address_string()} - OAuth callback received")
+            return
         print(f"[BrainCellGPT] {self.address_string()} - {format % args}")
 
 

@@ -197,6 +197,18 @@ class MCPStdioClientTests(unittest.TestCase):
                 "headers": {"Authorization": "Bearer do-not-embed"},
             }])})
 
+    def test_remote_mcp_accepts_preregistered_oauth_client_id(self):
+        specs = load_server_specs({"BRAINCELLGPT_MCP_SERVERS": json.dumps([{
+            "name": "remote", "url": "https://mcp.example.test/mcp",
+            "oauth": {"client_id": "pre-registered-client"},
+        }])})
+        self.assertEqual(specs[0].oauth_client_id, "pre-registered-client")
+        with self.assertRaisesRegex(ValueError, "only an optional pre-registered"):
+            load_server_specs({"BRAINCELLGPT_MCP_SERVERS": json.dumps([{
+                "name": "remote", "url": "https://mcp.example.test/mcp",
+                "oauth": {"client_secret": "literal-secret"},
+            }])})
+
     def test_remote_mcp_rejects_private_dns_before_http_request(self):
         server_env = {"BRAINCELLGPT_MCP_SERVERS": json.dumps([{
             "name": "remote", "url": "https://mcp.example.test/mcp",

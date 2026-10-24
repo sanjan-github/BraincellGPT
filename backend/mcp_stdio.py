@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from backend.provider_http import PROVIDER_SLOTS, open_provider_request, resolve_public_addresses
+from backend.mcp_oauth import access_token as oauth_access_token, requires_scope_upgrade
 
 
 MAX_CONFIG_BYTES = 100_000
@@ -44,6 +45,7 @@ class MCPServerSpec:
     env: dict[str, str]
     url: str | None = None
     headers: dict[str, str] | None = None
+    oauth_client_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,12 @@ def load_server_specs(environ: dict[str, str]) -> list[MCPServerSpec]:
                     or parsed.fragment or parsed.query or (port is not None and not 1 <= port <= 65535)):
                 raise ValueError("Remote MCP servers require an HTTPS URL without credentials, query, or fragment.")
             raw_headers = item.get("headers", {})
+            oauth = item.get("oauth", {})
+            if not isinstance(oauth, dict) or set(oauth) - {"client_id"}:
+                raise ValueError("Remote MCP oauth supports only an optional pre-registered client_id.")
+            oauth_client_id = oauth.get("client_id")
+            if oauth_client_id is not None and (not isinstance(oauth_client_id, str) or not oauth_client_id.strip() or len(oauth_client_id) > 1000):
+                raise ValueError("Remote MCP OAuth client_id must be a non-empty string up to 1,000 characters.")
             if not isinstance(raw_headers, dict) or len(raw_headers) > 16:
                 raise ValueError("Remote MCP headers must be an object with at most 16 entries.")
             resolved_headers = {}
@@ -142,8 +150,8 @@ def load_server_specs(environ: dict[str, str]) -> list[MCPServerSpec]:
                     raise ValueError("Remote MCP header values must be short and cannot contain newlines.")
                 resolved_headers[header_name] = raw_value
             if "command" in item or "args" in item or "env" in item:
-                raise ValueError("Remote MCP configuration uses url and headers, not command, args, or env.")
-            specs.append(MCPServerSpec(name, None, (), {}, url, resolved_headers))
+                raise ValueError("Remote MCP configuration uses url, headers, and oauth, not command, args, or env.")
+            specs.append(MCPServerSpec(name, None, (), {}, url, resolved_headers, oauth_client_id))
             seen.add(name)
             continue
         command, args, extra_env = item.get("command"), item.get("args", []), item.get("env", {})
@@ -515,10 +523,12 @@ class _StdioClient:
 class _StreamableHTTPClient:
     """Bounded remote MCP client for modern stateless and legacy session HTTP."""
 
-    def __init__(self, spec: MCPServerSpec):
+    def __init__(self, spec: MCPServerSpec, oauth_port: int = 8000, event_callback=None):
         if not spec.url:
             raise ValueError("Remote MCP URL is not configured.")
         self.spec = spec
+        self.oauth_port = oauth_port
+        self.event_callback = event_callback
         parsed = urlsplit(spec.url)
         self.addresses = resolve_public_addresses(parsed.hostname or "", parsed.port or 443)
         self.headers = dict(spec.headers or {})
@@ -535,6 +545,7 @@ class _StreamableHTTPClient:
         self.capabilities: dict = {}
         self._next_id = 1
         self._connecting = False
+        self._oauth_authorized = False
 
     @staticmethod
     def _meta() -> dict:
@@ -554,6 +565,11 @@ class _StreamableHTTPClient:
         if isinstance(value, dict):
             return {key: self._redact(item) for key, item in value.items()}
         return value
+
+    def _set_oauth_token(self, token: str) -> None:
+        self.headers["Authorization"] = "Bearer " + token
+        self._oauth_authorized = True
+        self._secret_values.extend(value for value in (token, "Bearer " + token) if value not in self._secret_values)
 
     def _decode_response(self, response, request_id: int) -> dict:
         raw = response.read(MAX_FRAME_BYTES + 1)
@@ -588,7 +604,7 @@ class _StreamableHTTPClient:
                 return message
         raise ValueError("MCP server event stream did not contain the requested response.")
 
-    def _post(self, message: dict, request_id: int | None, extra_headers: dict[str, str] | None = None) -> dict | None:
+    def _post(self, message: dict, request_id: int | None, extra_headers: dict[str, str] | None = None, _oauth_retry: bool = False) -> dict | None:
         encoded = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         if len(encoded) > MAX_FRAME_BYTES:
             raise ValueError("MCP request exceeds the size limit.")
@@ -624,9 +640,18 @@ class _StreamableHTTPClient:
             headers["MCP-Protocol-Version"] = self.protocol_version
             if self.session_id:
                 headers["Mcp-Session-Id"] = self.session_id
+        if self._oauth_authorized:
+            try:
+                token = oauth_access_token(self.spec.url, None, self.oauth_port, self.spec.oauth_client_id, self.event_callback)
+                self._set_oauth_token(token)
+            except ValueError as exc:
+                raise ValueError(self._redact(str(exc))) from exc
+            headers["Authorization"] = self.headers["Authorization"]
         request = urllib.request.Request(self.spec.url, data=encoded, headers=headers, method="POST")
         if not PROVIDER_SLOTS.acquire(timeout=2):
             raise ValueError("BrainCellGPT is busy handling provider and MCP requests. Try again shortly.")
+        oauth_challenge = None
+        scope_upgrade = False
         try:
             try:
                 with open_provider_request(request, timeout=MCP_TIMEOUT_SECONDS, pinned_addresses=self.addresses) as response:
@@ -642,23 +667,41 @@ class _StreamableHTTPClient:
                         return None
                     return self._decode_response(response, request_id)
             except urllib.error.HTTPError as exc:
-                if exc.code in (400, 404, 405):
-                    body = exc.read(MAX_FRAME_BYTES + 1)
-                    try:
-                        error_payload = json.loads(body.decode("utf-8")) if len(body) <= MAX_FRAME_BYTES else {}
-                    except (UnicodeDecodeError, json.JSONDecodeError):
-                        error_payload = {}
-                    rpc_error = error_payload.get("error") if isinstance(error_payload, dict) else None
-                    error_code = rpc_error.get("code") if isinstance(rpc_error, dict) else None
-                    if self._connecting and error_code == -32601:
-                        raise _MethodNotFound("MCP server does not support server discovery.") from exc
-                    if self._connecting:
-                        raise _LegacyFallback from exc
-                raise ValueError(f"MCP HTTP request failed with status {exc.code}.") from exc
+                challenge = exc.headers.get("WWW-Authenticate", "") if exc.headers else ""
+                needs_oauth = exc.code == 401 or (exc.code == 403 and requires_scope_upgrade(challenge))
+                if (needs_oauth and not _oauth_retry
+                        and not any(name.lower() == "authorization" for name in (self.spec.headers or {}))):
+                    oauth_challenge = challenge
+                    scope_upgrade = exc.code == 403
+                    exc.close()
+                else:
+                    if exc.code in (400, 404, 405):
+                        body = exc.read(MAX_FRAME_BYTES + 1)
+                        try:
+                            error_payload = json.loads(body.decode("utf-8")) if len(body) <= MAX_FRAME_BYTES else {}
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            error_payload = {}
+                        rpc_error = error_payload.get("error") if isinstance(error_payload, dict) else None
+                        error_code = rpc_error.get("code") if isinstance(rpc_error, dict) else None
+                        if self._connecting and error_code == -32601:
+                            raise _MethodNotFound("MCP server does not support server discovery.") from exc
+                        if self._connecting:
+                            raise _LegacyFallback from exc
+                    raise ValueError(f"MCP HTTP request failed with status {exc.code}.") from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise ValueError("Could not reach the configured remote MCP server.") from exc
         finally:
             PROVIDER_SLOTS.release()
+        if oauth_challenge is not None:
+            try:
+                token = oauth_access_token(
+                    self.spec.url, oauth_challenge, self.oauth_port, self.spec.oauth_client_id, self.event_callback,
+                    force_refresh=not scope_upgrade, force_reauthorize=scope_upgrade,
+                )
+            except ValueError as exc:
+                raise ValueError(self._redact(str(exc))) from exc
+            self._set_oauth_token(token)
+            return self._post(message, request_id, extra_headers, _oauth_retry=True)
 
     def _request_result(self, method: str, params: dict | None = None, extra_headers: dict[str, str] | None = None) -> dict:
         request_id = self._next_id
@@ -805,9 +848,9 @@ class _LegacyFallback(ValueError):
     pass
 
 
-def _connect_server(spec: MCPServerSpec, environ: dict[str, str], cwd: Path):
+def _connect_server(spec: MCPServerSpec, environ: dict[str, str], cwd: Path, oauth_port: int = 8000, event_callback=None):
     if spec.url:
-        client = _StreamableHTTPClient(spec)
+        client = _StreamableHTTPClient(spec, oauth_port, event_callback)
         client.connect()
         return client
     client = _StdioClient(spec, environ, cwd)
@@ -908,9 +951,11 @@ def _bounded_json_result(value: dict) -> dict:
 class MCPToolRouter:
     """Keep configured stdio servers alive for one complete agent run."""
 
-    def __init__(self, environ: dict[str, str], cwd: Path, event_callback=None):
+    def __init__(self, environ: dict[str, str], cwd: Path, event_callback=None, oauth_port: int = 8000):
         self.environ = environ
         self.cwd = cwd
+        self.oauth_port = oauth_port
+        self.event_callback = event_callback
         self.tools: list[dict] = []
         self.routes: dict[str, MCPToolRoute] = {}
         self._clients: list[Any] = []
@@ -925,7 +970,7 @@ class MCPToolRouter:
         for spec in specs:
             client = None
             try:
-                client = _connect_server(spec, environ, cwd)
+                client = _connect_server(spec, environ, cwd, self.oauth_port, event_callback)
                 self._clients.append(client)
                 for raw_tool in client.list_tools():
                     remote_http = isinstance(client, _StreamableHTTPClient) and client.era == "modern"
