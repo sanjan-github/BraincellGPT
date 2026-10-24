@@ -25,6 +25,8 @@ and extension-host APIs are outside this backend port.
   sequential subtasks.
 - Bounded accumulated tool context and repeat-call protection for identical
   mutating operations.
+- Validated provider tool-call IDs, function names, argument sizes, and batch
+  limits before executing any tool in a response.
 - Model-assisted semantic compaction of older agent context, preserving the
   current task and complete tool-call exchanges.
 - Local SQLite task sessions with bounded turns, deletion, and no persisted API

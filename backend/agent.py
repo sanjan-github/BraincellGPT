@@ -38,6 +38,9 @@ MAX_COMMAND_SECONDS = 60
 MAX_COMMAND_OUTPUT_BYTES = 16_000
 MAX_DIFF_BYTES = 100_000
 MAX_DIFF_PREVIEW_CHARS = 24_000
+MAX_TOOL_ARGUMENT_BYTES = 64_000
+TOOL_CALL_ID_RE = re.compile(r"^[\x21-\x7e]{1,256}$")
+TOOL_FUNCTION_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build", ".idea", ".vscode", ".ssh", ".aws", ".azure", ".gnupg", ".kube"}
 IGNORED_FILES = {".env", ".env.local"}
 PROTECTED_FILE_PATTERNS = (
@@ -1057,14 +1060,19 @@ def run_agent(
                 answer = "".join(x.get("text", "") for x in answer if isinstance(x, dict))
             return {"reply": str(answer).strip() or "I couldn't produce a response.", "tool_calls": tool_calls_made, "steps": _ + 1, "mode": mode, "todos": todos, "session_id": session_id}
         validated_calls = []
+        seen_call_ids = set()
         for call in calls:
-            if not isinstance(call, dict) or not isinstance(call.get("id"), str) or not call["id"]:
+            if not isinstance(call, dict) or not isinstance(call.get("id"), str) or not TOOL_CALL_ID_RE.fullmatch(call["id"]):
                 raise ValueError("Provider returned a malformed tool call ID.")
+            if call["id"] in seen_call_ids:
+                raise ValueError("Provider returned duplicate tool call IDs.")
+            seen_call_ids.add(call["id"])
             function = call.get("function")
-            if not isinstance(function, dict) or not isinstance(function.get("name"), str):
+            if (not isinstance(function, dict) or not isinstance(function.get("name"), str)
+                    or not TOOL_FUNCTION_NAME_RE.fullmatch(function["name"])):
                 raise ValueError("Provider returned a malformed tool function.")
             raw_args = function.get("arguments", "{}")
-            if not isinstance(raw_args, str):
+            if not isinstance(raw_args, str) or len(raw_args.encode("utf-8", errors="replace")) > MAX_TOOL_ARGUMENT_BYTES:
                 raise ValueError("Provider returned malformed tool arguments.")
             try:
                 args = json.loads(raw_args)

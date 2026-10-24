@@ -136,6 +136,15 @@ class AgentEditingToolTests(unittest.TestCase):
 
 
 class AgentWorkflowTests(unittest.TestCase):
+    @staticmethod
+    def _openai_tool_response(calls):
+        response = MagicMock()
+        response.read.return_value = json.dumps({"choices": [{"message": {
+            "content": None, "tool_calls": calls,
+        }}]}).encode()
+        response.__enter__.return_value = response
+        return response
+
     def test_context_compaction_summarizes_old_turns_and_keeps_tool_exchanges_whole(self):
         response = MagicMock()
         response.read.return_value = b'{"choices":[{"message":{"content":"Prior work: inspected src/app.py; fix the parser next."}}]}'
@@ -193,6 +202,66 @@ class AgentWorkflowTests(unittest.TestCase):
                 endpoint, _secret, model, _pinned = _provider(name, "", "", "", {})
                 self.assertEqual(endpoint, config["base_url"].rstrip("/") + "/chat/completions")
                 self.assertEqual(model, config["model"])
+
+    def test_malformed_tool_call_batch_is_rejected_before_any_tool_runs(self):
+        valid_write = {"id": "write-1", "type": "function", "function": {
+            "name": "write_file", "arguments": '{"path":"should-not-exist.txt","content":"x"}',
+        }}
+        missing_id = {"type": "function", "function": {"name": "write_file", "arguments": "{}"}}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("backend.agent.open_provider_request", return_value=self._openai_tool_response([valid_write, missing_id])) as opener:
+                with self.assertRaisesRegex(ValueError, "malformed tool call ID"):
+                    run_agent("write safely", [], root, "groq", "key", "", "", {}, allow_edits=True)
+            self.assertFalse((root / "should-not-exist.txt").exists())
+            opener.assert_called_once()
+
+    def test_agent_rejects_invalid_tool_call_shapes_and_arguments(self):
+        malformed_calls = [
+            ([{"id": "call-1", "function": {"arguments": "{}"}}], "malformed tool function"),
+            ([{"id": "call-1", "function": {"name": "read_file", "arguments": "{"}}], "invalid tool argument JSON"),
+            ([{"id": "call-1", "function": {"name": "read_file", "arguments": "[]"}}], "arguments must be an object"),
+            ([{"id": "duplicate", "function": {"name": "read_file", "arguments": "{}"}},
+              {"id": "duplicate", "function": {"name": "read_file", "arguments": "{}"}}], "duplicate tool call IDs"),
+            ([{"id": "call-1", "function": {"name": "bad tool name", "arguments": "{}"}}], "malformed tool function"),
+        ]
+        for calls, expected in malformed_calls:
+            with self.subTest(expected=expected):
+                with patch("backend.agent.open_provider_request", return_value=self._openai_tool_response(calls)):
+                    with self.assertRaisesRegex(ValueError, expected):
+                        run_agent("inspect", [], Path.cwd(), "groq", "key", "", "", {})
+
+    def test_agent_rejects_more_than_four_tool_calls(self):
+        calls = [{"id": f"call-{index}", "function": {"name": "read_file", "arguments": "{}"}}
+                 for index in range(5)]
+        with patch("backend.agent.open_provider_request", return_value=self._openai_tool_response(calls)):
+            with self.assertRaisesRegex(ValueError, "too many tool calls"):
+                run_agent("inspect", [], Path.cwd(), "groq", "key", "", "", {})
+
+    def test_unknown_tool_returns_a_controlled_tool_error(self):
+        final = MagicMock()
+        final.read.return_value = b'{"choices":[{"message":{"content":"I could not use that tool."}}]}'
+        final.__enter__.return_value = final
+        with patch("backend.agent.open_provider_request", side_effect=[
+            self._openai_tool_response([{"id": "unknown-1", "function": {"name": "unknown_tool", "arguments": "{}"}}]),
+            final,
+        ]) as opener:
+            result = run_agent("inspect", [], Path.cwd(), "groq", "key", "", "", {})
+        tool_message = json.loads(opener.call_args_list[1].args[0].data.decode())["messages"][-1]
+        self.assertEqual(tool_message["role"], "tool")
+        error = json.loads(tool_message["content"])["error"]
+        self.assertIn("tool is unavailable", error)
+        self.assertEqual(result["reply"], "I could not use that tool.")
+
+    def test_agent_step_limit_returns_controlled_completion_status(self):
+        responses = [self._openai_tool_response([{
+            "id": f"read-{index}", "function": {"name": "read_file", "arguments": '{"path":"missing.txt"}'},
+        }]) for index in range(8)]
+        with patch("backend.agent.open_provider_request", side_effect=responses) as opener:
+            result = run_agent("inspect", [], Path.cwd(), "groq", "key", "", "", {})
+        self.assertTrue(result["limit_reached"])
+        self.assertEqual(result["steps"], 8)
+        self.assertEqual(opener.call_count, 8)
 
     def test_anthropic_payload_translates_function_calls_and_results(self):
         messages = [
