@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from backend.agent import (
     _bound_agent_messages,
+    _summarize_agent_context,
     _anthropic_assistant,
     _anthropic_payload,
     _provider,
@@ -134,6 +135,25 @@ class AgentEditingToolTests(unittest.TestCase):
 
 
 class AgentWorkflowTests(unittest.TestCase):
+    def test_context_compaction_summarizes_old_turns_and_keeps_tool_exchanges_whole(self):
+        response = MagicMock()
+        response.read.return_value = b'{"choices":[{"message":{"content":"Prior work: inspected src/app.py; fix the parser next."}}]}'
+        response.__enter__.return_value = response
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "Inspect parser"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "tool-1", "function": {"name": "read_file", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "tool-1", "content": "parser source " + ("x" * 300)},
+            {"role": "user", "content": "Now fix the issue"},
+        ]
+        with patch("backend.agent.MAX_AGENT_CONTEXT_CHARS", 220), patch("backend.agent.open_provider_request", return_value=response) as opener:
+            self.assertTrue(_summarize_agent_context(messages, "groq", "https://provider.test/chat", "key", "model"))
+        payload = json.loads(opener.call_args.args[0].data.decode())
+        self.assertIn("Inspect parser", payload["messages"][1]["content"])
+        self.assertEqual(messages[-1]["content"], "Now fix the issue")
+        self.assertIn("Prior work", messages[1]["content"])
+        self.assertFalse(any(message.get("role") == "tool" for message in messages))
+
     def test_followup_completion_and_mode_tools_return_structured_states(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

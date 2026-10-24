@@ -21,6 +21,8 @@ and extension-host APIs are outside this backend port.
   sequential subtasks.
 - Bounded accumulated tool context and repeat-call protection for identical
   mutating operations.
+- Model-assisted semantic compaction of older agent context, preserving the
+  current task and complete tool-call exchanges.
 - Local SQLite task sessions with bounded turns, deletion, and no persisted API
   keys.
 - Configured MCP stdio tool and resource discovery/reads, with modern and legacy
@@ -43,8 +45,7 @@ and extension-host APIs are outside this backend port.
 
 1. Add OAuth 2.1 authorization discovery, token lifecycle, and reauthorization
    for remote MCP servers; configured bearer/API-key headers are supported now.
-2. Expand provider adapters and model capability metadata, then add semantic
-   conversation compaction.
+2. Expand provider adapters and model capability metadata.
 3. Add end-to-end acceptance coverage for task persistence, approval, streaming,
    and rollback.
 
@@ -62,7 +63,7 @@ session. Restore an individual file snapshot or a complete agent-run group with
 `checkpoint_id` or `group_id`. Group restore creates a corresponding redo group.
 Use `POST /api/agent/stream` with the same JSON body for a server-sent event
 stream. JSON `data:` frames report `start`, `text_delta`, `tool_start`,
-`approval_required`, `tool_result`, `done`, or `error`; `done` carries the
+`approval_required`, `tool_result`, `context_compacting`, `done`, or `error`; `done` carries the
 standard agent result.
 Mutating tools emit `approval_required` with a bounded action preview and pause
 the stream. Resolve that specific action with `POST /api/agent/approvals` using

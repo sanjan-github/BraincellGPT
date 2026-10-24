@@ -747,6 +747,109 @@ def _bound_agent_messages(messages: list[dict]) -> list[dict]:
     return messages
 
 
+def _agent_context_size(messages: list[dict]) -> int:
+    """Estimate text context size without charging base64 image payloads to it."""
+    total = 0
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            content = [part for part in content if not isinstance(part, dict) or part.get("type") == "text"]
+            message = {**message, "content": content}
+        total += len(json.dumps(message, ensure_ascii=False))
+    return total
+
+
+def _complete_message_group_end(messages: list[dict], start: int) -> int:
+    """Return the end of a message or complete assistant/tool-call exchange."""
+    end = start + 1
+    message = messages[start]
+    if message.get("role") == "assistant" and message.get("tool_calls"):
+        call_ids = {
+            call.get("id") for call in message["tool_calls"]
+            if isinstance(call, dict) and isinstance(call.get("id"), str)
+        }
+        while end < len(messages) and messages[end].get("role") == "tool" and messages[end].get("tool_call_id") in call_ids:
+            end += 1
+    return end
+
+
+def _summarize_agent_context(messages: list[dict], provider: str, endpoint: str, secret: str, model: str, pinned_addresses=None) -> bool:
+    """Compress older context with the active model while retaining recent turns."""
+    limit = MAX_AGENT_CONTEXT_CHARS
+    if _agent_context_size(messages) <= limit:
+        return False
+    # Keep an initial multimodal task attached to the conversation; a text-only
+    # summary model cannot inspect image bytes.
+    protected = 2 if len(messages) > 1 and isinstance(messages[1].get("content"), list) else 1
+    if len(messages) - protected < 2:
+        return False
+    target = int(limit * 0.65)
+    end = protected
+    while end < len(messages) - 1 and _agent_context_size([messages[0], *messages[end:]]) > target:
+        next_end = _complete_message_group_end(messages, end)
+        if next_end > len(messages) - 1:
+            break
+        end = next_end
+    if end == protected:
+        return False
+
+    source_messages = []
+    for message in messages[protected:end]:
+        content = message.get("content")
+        if isinstance(content, list):
+            content = "\n".join(
+                str(part.get("text", "[image attachment omitted from text summary]"))
+                if isinstance(part, dict) else ""
+                for part in content
+            )
+        source_messages.append({key: value for key, value in message.items() if key != "content"} | {"content": str(content or "")})
+    summary_instruction = (
+        "Summarize the earlier agent conversation for continuation. Preserve user goals, "
+        "decisions, constraints, file paths, discoveries, errors, and unfinished work. "
+        "Do not invent facts or claim work is done without evidence. Return only a concise summary.\n\n"
+        "Earlier conversation:\n" + json.dumps(source_messages, ensure_ascii=False)
+    )
+    if provider == "anthropic":
+        payload = {"model": model, "system": "You compact coding-agent context accurately and preserve actionable details.",
+                   "messages": [{"role": "user", "content": summary_instruction}], "max_tokens": 1600, "temperature": 0}
+        headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01"}
+        if secret:
+            headers["x-api-key"] = secret
+    else:
+        payload = {"model": model, "messages": [
+            {"role": "system", "content": "You compact coding-agent context accurately and preserve actionable details."},
+            {"role": "user", "content": summary_instruction},
+        ], "max_tokens": 1600, "temperature": 0}
+        headers = {"Content-Type": "application/json"}
+        if secret:
+            headers["Authorization"] = "Bearer " + secret
+    request = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+    if not _PROVIDER_SLOTS.acquire(timeout=2):
+        return False
+    try:
+        with open_provider_request(request, timeout=60, pinned_addresses=pinned_addresses) as response:
+            result = _read_provider_json(response)
+    except (ValueError, RuntimeError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+        return False
+    finally:
+        _PROVIDER_SLOTS.release()
+    if provider == "anthropic":
+        blocks = result.get("content", []) if isinstance(result, dict) else []
+        summary = "\n".join(block.get("text", "") for block in blocks if isinstance(block, dict) and block.get("type") == "text")
+    else:
+        choices = result.get("choices", []) if isinstance(result, dict) else []
+        message = choices[0].get("message", {}) if choices and isinstance(choices[0], dict) else {}
+        summary = message.get("content", "") if isinstance(message, dict) else ""
+        if isinstance(summary, list):
+            summary = "\n".join(part.get("text", "") for part in summary if isinstance(part, dict))
+    summary = str(summary).strip()[:8000]
+    if not summary:
+        return False
+    replacement = {"role": "user", "content": "Earlier conversation summary (context only):\n" + summary}
+    messages[protected:end] = [replacement]
+    return True
+
+
 def _approval_preview(name: str, args: dict) -> dict:
     """Expose a bounded proposed-action preview for the local approval UI."""
     if name == "execute_command":
@@ -898,6 +1001,10 @@ def run_agent(
     executed_mutations: set[str] = set()
     todos: list[str] = []
     for _ in range(MAX_STEPS):
+        if _agent_context_size(messages) > MAX_AGENT_CONTEXT_CHARS:
+            compacted = _summarize_agent_context(messages, provider, endpoint, secret, model_name, pinned_addresses)
+            if compacted and event_callback is not None:
+                event_callback({"type": "context_compacting"})
         _bound_agent_messages(messages)
         active_tools = tools_for_mode(
             mode,
