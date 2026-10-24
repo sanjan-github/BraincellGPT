@@ -24,6 +24,7 @@ from backend.agent_modes import MODES, normalize_mode
 from backend import mcp_stdio
 from backend.provider_http import MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 from backend.media import anthropic_content, normalize_images, openai_content
+from backend.provider_registry import OPENAI_COMPATIBLE_PROVIDERS
 
 
 MAX_FILE_BYTES = 200_000
@@ -873,22 +874,10 @@ def _approval_preview(name: str, args: dict) -> dict:
 
 
 def _provider(provider: str, api_key: str, base_url: str, model: str, environ: dict[str, str]):
-    registry = {
-        "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "GROQ_API_KEY", "GROQ_MODEL"),
-        "openai": ("https://api.openai.com/v1", "gpt-4.1-mini", "OPENAI_API_KEY", "OPENAI_MODEL"),
-        "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.8-flash", "GEMINI_API_KEY", "GEMINI_MODEL"),
-        "openrouter": ("https://openrouter.ai/api/v1", "openai/gpt-4o-mini", "OPENROUTER_API_KEY", "OPENROUTER_MODEL"),
-        "deepseek": ("https://api.deepseek.com", "deepseek-chat", "DEEPSEEK_API_KEY", "DEEPSEEK_MODEL"),
-        "mistral": ("https://api.mistral.ai/v1", "mistral-small-latest", "MISTRAL_API_KEY", "MISTRAL_MODEL"),
-        "xai": ("https://api.x.ai/v1", "grok-3-mini", "XAI_API_KEY", "XAI_MODEL"),
-        "together": ("https://api.together.xyz/v1", "meta-llama/Llama-3.3-70B-Instruct-Turbo", "TOGETHER_API_KEY", "TOGETHER_MODEL"),
-        "fireworks": ("https://api.fireworks.ai/inference/v1", "accounts/fireworks/models/llama-v3p3-70b-instruct", "FIREWORKS_API_KEY", "FIREWORKS_MODEL"),
-        "cerebras": ("https://api.cerebras.ai/v1", "llama-3.3-70b", "CEREBRAS_API_KEY", "CEREBRAS_MODEL"),
-        "nvidia_nim": ("https://integrate.api.nvidia.com/v1", "meta/llama-3.3-70b-instruct", "NVIDIA_NIM_API_KEY", "NVIDIA_NIM_MODEL"),
-    }
-    if provider in registry:
-        endpoint, default_model, key_env, model_env = registry[provider]
-        return endpoint + "/chat/completions", api_key or environ.get(key_env, ""), model or environ.get(model_env, "") or default_model, None
+    if provider in OPENAI_COMPATIBLE_PROVIDERS:
+        config = OPENAI_COMPATIBLE_PROVIDERS[provider]
+        endpoint = config["base_url"].rstrip("/") + "/chat/completions"
+        return endpoint, api_key or environ.get(config["env_key"], ""), model or environ.get(config["env_model"], "") or config["model"], None
     if provider == "anthropic":
         return (
             "https://api.anthropic.com/v1/messages",

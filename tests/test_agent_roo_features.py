@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from backend.provider_registry import OPENAI_COMPATIBLE_PROVIDERS
 from backend.agent import (
     _bound_agent_messages,
     _summarize_agent_context,
@@ -185,6 +186,13 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertEqual(secret, "gemini-key")
         self.assertEqual(model, "gemini-3.8-flash")
         self.assertIsNone(pinned)
+
+    def test_chat_and_coding_agent_share_all_openai_compatible_providers(self):
+        for name, config in OPENAI_COMPATIBLE_PROVIDERS.items():
+            with self.subTest(provider=name):
+                endpoint, _secret, model, _pinned = _provider(name, "", "", "", {})
+                self.assertEqual(endpoint, config["base_url"].rstrip("/") + "/chat/completions")
+                self.assertEqual(model, config["model"])
 
     def test_anthropic_payload_translates_function_calls_and_results(self):
         messages = [

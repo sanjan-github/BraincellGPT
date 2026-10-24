@@ -13,6 +13,8 @@ and extension-host APIs are outside this backend port.
 - OpenAI-compatible tool calls and Anthropic's native Messages tool protocol.
 - Google Gemini through its OpenAI-compatible endpoint for chat, coding-agent
   tool calls, and image input.
+- One shared provider registry for chat and agent model defaults, including
+  OpenRouter in the coding-agent path.
 - Bounded list, read, and literal-search tools that omit protected paths.
 - Atomic file writes, exact-match search/replace, non-mutating unified diff
   previews, and guarded text diffs.
