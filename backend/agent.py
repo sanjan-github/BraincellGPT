@@ -876,6 +876,7 @@ def _provider(provider: str, api_key: str, base_url: str, model: str, environ: d
     registry = {
         "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "GROQ_API_KEY", "GROQ_MODEL"),
         "openai": ("https://api.openai.com/v1", "gpt-4.1-mini", "OPENAI_API_KEY", "OPENAI_MODEL"),
+        "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.8-flash", "GEMINI_API_KEY", "GEMINI_MODEL"),
         "openrouter": ("https://openrouter.ai/api/v1", "openai/gpt-4o-mini", "OPENROUTER_API_KEY", "OPENROUTER_MODEL"),
         "deepseek": ("https://api.deepseek.com", "deepseek-chat", "DEEPSEEK_API_KEY", "DEEPSEEK_MODEL"),
         "mistral": ("https://api.mistral.ai/v1", "mistral-small-latest", "MISTRAL_API_KEY", "MISTRAL_MODEL"),

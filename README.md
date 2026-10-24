@@ -83,6 +83,7 @@ Select the provider in the chat interface. The credential must match the selecte
 | --- | --- | --- |
 | Groq | `GROQ_API_KEY` | Default provider |
 | OpenAI | `OPENAI_API_KEY` | Set `OPENAI_MODEL` if needed |
+| Google Gemini | `GEMINI_API_KEY` | OpenAI-compatible Gemini API; set `GEMINI_MODEL` if needed |
 | Anthropic | `ANTHROPIC_API_KEY` | Uses Anthropic's Messages API |
 | OpenRouter | `OPENROUTER_API_KEY` | Set `OPENROUTER_MODEL` if needed |
 | NVIDIA NIM | `NVIDIA_NIM_API_KEY` | Set `NVIDIA_NIM_MODEL` if needed |

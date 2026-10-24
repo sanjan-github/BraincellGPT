@@ -15,6 +15,7 @@ class ProviderConfigurationTests(unittest.TestCase):
     def test_cloud_provider_registry_has_required_fields(self):
         self.assertIn("groq", app.OPENAI_COMPATIBLE_PROVIDERS)
         self.assertIn("deepseek", app.OPENAI_COMPATIBLE_PROVIDERS)
+        self.assertIn("gemini", app.OPENAI_COMPATIBLE_PROVIDERS)
         for name, config in app.OPENAI_COMPATIBLE_PROVIDERS.items():
             with self.subTest(provider=name):
                 self.assertTrue(config["label"])
@@ -142,6 +143,20 @@ class ApiReliabilityTests(unittest.TestCase):
         self.assertEqual(request.get_header("Authorization"), "Bearer secret-key")
         self.assertEqual(payload["model"], "llama-3.3-70b-versatile")
         self.assertNotIn("secret-key", json.dumps(payload))
+
+    def test_gemini_uses_openai_compatible_endpoint_and_provider_defaults(self):
+        response = MagicMock()
+        response.read.return_value = b'{"choices":[{"message":{"content":"reply"}}]}'
+        response.__enter__.return_value = response
+
+        with patch.dict(os.environ, {"GEMINI_MODEL": ""}), patch("app.open_provider_request", return_value=response) as opener:
+            self.assertEqual(app.generate_reply("hello", [], "normal", provider="gemini", user_api_key="gemini-key"), "reply")
+
+        request = opener.call_args.args[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(request.full_url, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+        self.assertEqual(request.get_header("Authorization"), "Bearer gemini-key")
+        self.assertEqual(payload["model"], "gemini-3.8-flash")
 
     def test_blank_environment_model_uses_provider_default(self):
         response = MagicMock()

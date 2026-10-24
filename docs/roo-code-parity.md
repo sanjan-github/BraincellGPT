@@ -11,6 +11,8 @@ and extension-host APIs are outside this backend port.
 - Code, Ask, Architect, Debug, and Orchestrator modes with server-side tool
   capability filtering.
 - OpenAI-compatible tool calls and Anthropic's native Messages tool protocol.
+- Google Gemini through its OpenAI-compatible endpoint for chat, coding-agent
+  tool calls, and image input.
 - Bounded list, read, and literal-search tools that omit protected paths.
 - Atomic file writes, exact-match search/replace, non-mutating unified diff
   previews, and guarded text diffs.

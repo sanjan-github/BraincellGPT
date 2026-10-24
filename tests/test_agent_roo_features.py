@@ -177,6 +177,15 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertTrue(model)
         self.assertIsNone(pinned)
 
+    def test_gemini_provider_is_available_to_the_coding_agent(self):
+        endpoint, secret, model, pinned = _provider(
+            "gemini", "", "", "", {"GEMINI_API_KEY": "gemini-key", "GEMINI_MODEL": ""}
+        )
+        self.assertEqual(endpoint, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+        self.assertEqual(secret, "gemini-key")
+        self.assertEqual(model, "gemini-3.8-flash")
+        self.assertIsNone(pinned)
+
     def test_anthropic_payload_translates_function_calls_and_results(self):
         messages = [
             {"role": "system", "content": "system prompt"},
