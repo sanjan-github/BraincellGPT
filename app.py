@@ -19,6 +19,7 @@ import ipaddress
 import socket
 import re
 from backend.agent import run_agent
+from backend.provider_http import open_provider_request
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
@@ -297,7 +298,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         if not _provider_slots.acquire(timeout=2):
             raise RuntimeError("BrainCellGPT is busy handling other provider requests. Try again shortly.")
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
+            with open_provider_request(request, timeout=60) as response:
                 data = _read_provider_json(response, label)
         finally:
             _provider_slots.release()
