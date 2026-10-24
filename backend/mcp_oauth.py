@@ -171,9 +171,15 @@ def _discover(server_url: str, challenge: str | None) -> tuple[dict, dict, str]:
     return resource_metadata, metadata, issuer
 
 
-def _register_client(metadata: dict, issuer: str, redirect_uri: str, configured_client_id: str | None) -> str:
+def _register_client(metadata: dict, issuer: str, redirect_uri: str, configured_client_id: str | None,
+                     configured_client_metadata_url: str | None = None) -> str:
     if configured_client_id:
         return configured_client_id
+    if configured_client_metadata_url:
+        if metadata.get("client_id_metadata_document_supported") is not True:
+            raise ValueError("The OAuth server does not advertise Client ID Metadata Document support.")
+        _https_endpoint(configured_client_metadata_url)
+        return configured_client_metadata_url
     cache_key = (issuer, redirect_uri)
     with _TOKEN_LOCK:
         if cache_key in _CLIENT_IDS:
@@ -186,6 +192,8 @@ def _register_client(metadata: dict, issuer: str, redirect_uri: str, configured_
         return stored_client_id
     registration_endpoint = metadata.get("registration_endpoint")
     if not registration_endpoint:
+        if metadata.get("client_id_metadata_document_supported") is True:
+            raise ValueError("This OAuth server supports Client ID Metadata Documents; configure oauth.client_id_metadata_url or a pre-registered client_id.")
         raise ValueError("This OAuth server needs a pre-registered client_id or a dynamic registration endpoint.")
     _https_endpoint(registration_endpoint)
     registered = _request_json(registration_endpoint, {
@@ -299,7 +307,8 @@ def _refresh(server_url: str, cached: dict) -> dict | None:
 
 
 def _access_token_once(server_url: str, challenge: str | None, callback_port: int, configured_client_id: str | None,
-                       event_callback, timeout: int, force_refresh: bool, force_reauthorize: bool) -> str:
+                       event_callback, timeout: int, force_refresh: bool, force_reauthorize: bool,
+                       configured_client_metadata_url: str | None = None) -> str:
     """Return a live access token, launching a localhost PKCE flow if needed."""
     server_key = server_url
     cached = None
@@ -325,7 +334,7 @@ def _access_token_once(server_url: str, challenge: str | None, callback_port: in
     if not isinstance(challenge_methods, list) or "S256" not in challenge_methods:
         raise ValueError("OAuth server does not advertise PKCE S256; refusing insecure authorization.")
     redirect_uri = f"http://127.0.0.1:{callback_port}/api/mcp/oauth/callback"
-    client_id = _register_client(metadata, issuer, redirect_uri, configured_client_id)
+    client_id = _register_client(metadata, issuer, redirect_uri, configured_client_id, configured_client_metadata_url)
     token_endpoint = metadata["token_endpoint"]
     resource = server_url
     challenge_params = _challenge_params(challenge)
@@ -393,13 +402,14 @@ def _access_token_once(server_url: str, challenge: str | None, callback_port: in
 
 def access_token(server_url: str, challenge: str | None, callback_port: int, configured_client_id: str | None = None,
                  event_callback=None, timeout: int = AUTHORIZATION_WAIT_SECONDS, force_refresh: bool = False,
-                 force_reauthorize: bool = False) -> str:
+                 force_reauthorize: bool = False, configured_client_metadata_url: str | None = None) -> str:
     """Serialize token refresh/authorization to handle refresh-token rotation."""
     with _TOKEN_LOCK:
         flow_lock = _FLOW_LOCKS.setdefault(server_url, threading.Lock())
     with flow_lock:
         return _access_token_once(server_url, challenge, callback_port, configured_client_id,
-                                  event_callback, timeout, force_refresh, force_reauthorize)
+                                  event_callback, timeout, force_refresh, force_reauthorize,
+                                  configured_client_metadata_url)
 
 
 def complete_callback(query: dict[str, list[str]]) -> str:

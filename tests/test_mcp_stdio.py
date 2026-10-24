@@ -117,6 +117,27 @@ class MCPStdioClientTests(unittest.TestCase):
                 "name": "bad", "command": "python", "env": {"TOKEN": "${MISSING_TOKEN}"},
             }])})
 
+    def test_remote_mcp_accepts_a_hosted_cimd_url(self):
+        server_env = {"BRAINCELLGPT_MCP_SERVERS": json.dumps([{
+            "name": "remote", "url": "https://mcp.example.test/mcp",
+            "oauth": {"client_id_metadata_url": "https://client.example.test/braincellgpt.json"},
+        }])}
+        spec = load_server_specs(server_env)[0]
+        self.assertEqual(spec.oauth_client_metadata_url, "https://client.example.test/braincellgpt.json")
+
+    def test_cimd_configuration_rejects_unsafe_urls_and_conflicting_client_id(self):
+        for url in ("http://client.example.test/client.json", "https://user@client.example.test/client.json", "https://client.example.test/client.json?token=x"):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                load_server_specs({"BRAINCELLGPT_MCP_SERVERS": json.dumps([{
+                    "name": "remote", "url": "https://mcp.example.test/mcp",
+                    "oauth": {"client_id_metadata_url": url},
+                }])})
+        with self.assertRaisesRegex(ValueError, "either oauth.client_id"):
+            load_server_specs({"BRAINCELLGPT_MCP_SERVERS": json.dumps([{
+                "name": "remote", "url": "https://mcp.example.test/mcp",
+                "oauth": {"client_id": "registered", "client_id_metadata_url": "https://client.example.test/client.json"},
+            }])})
+
     def test_remote_mcp_uses_pinned_https_and_explicit_environment_credentials(self):
         server_env = {
             "MCP_ACCESS_TOKEN": "remote-secret",
@@ -203,7 +224,7 @@ class MCPStdioClientTests(unittest.TestCase):
             "oauth": {"client_id": "pre-registered-client"},
         }])})
         self.assertEqual(specs[0].oauth_client_id, "pre-registered-client")
-        with self.assertRaisesRegex(ValueError, "only an optional pre-registered"):
+        with self.assertRaisesRegex(ValueError, "client_id or client_id_metadata_url"):
             load_server_specs({"BRAINCELLGPT_MCP_SERVERS": json.dumps([{
                 "name": "remote", "url": "https://mcp.example.test/mcp",
                 "oauth": {"client_secret": "literal-secret"},

@@ -46,6 +46,7 @@ class MCPServerSpec:
     url: str | None = None
     headers: dict[str, str] | None = None
     oauth_client_id: str | None = None
+    oauth_client_metadata_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -110,11 +111,28 @@ def load_server_specs(environ: dict[str, str]) -> list[MCPServerSpec]:
                 raise ValueError("Remote MCP servers require an HTTPS URL without credentials, query, or fragment.")
             raw_headers = item.get("headers", {})
             oauth = item.get("oauth", {})
-            if not isinstance(oauth, dict) or set(oauth) - {"client_id"}:
-                raise ValueError("Remote MCP oauth supports only an optional pre-registered client_id.")
+            if not isinstance(oauth, dict) or set(oauth) - {"client_id", "client_id_metadata_url"}:
+                raise ValueError("Remote MCP oauth supports client_id or client_id_metadata_url.")
             oauth_client_id = oauth.get("client_id")
             if oauth_client_id is not None and (not isinstance(oauth_client_id, str) or not oauth_client_id.strip() or len(oauth_client_id) > 1000):
                 raise ValueError("Remote MCP OAuth client_id must be a non-empty string up to 1,000 characters.")
+            oauth_client_metadata_url = oauth.get("client_id_metadata_url")
+            if oauth_client_metadata_url is not None:
+                if (not isinstance(oauth_client_metadata_url, str) or len(oauth_client_metadata_url) > 2000
+                        or oauth_client_metadata_url != oauth_client_metadata_url.strip()):
+                    raise ValueError("Remote MCP OAuth client_id_metadata_url must be an HTTPS URL up to 2,000 characters.")
+                try:
+                    metadata_url = urlsplit(oauth_client_metadata_url)
+                    metadata_port = metadata_url.port
+                except ValueError as exc:
+                    raise ValueError("Remote MCP OAuth client_id_metadata_url is invalid.") from exc
+                if (metadata_url.scheme != "https" or not metadata_url.hostname or metadata_url.username
+                        or metadata_url.password or metadata_url.fragment or metadata_url.query
+                        or any(ch.isspace() or ord(ch) < 0x20 for ch in oauth_client_metadata_url)
+                        or (metadata_port is not None and not 1 <= metadata_port <= 65535)):
+                    raise ValueError("Remote MCP OAuth client_id_metadata_url must be public HTTPS without credentials, query, or fragment.")
+                if oauth_client_id:
+                    raise ValueError("Configure either oauth.client_id or oauth.client_id_metadata_url, not both.")
             if not isinstance(raw_headers, dict) or len(raw_headers) > 16:
                 raise ValueError("Remote MCP headers must be an object with at most 16 entries.")
             resolved_headers = {}
@@ -151,7 +169,7 @@ def load_server_specs(environ: dict[str, str]) -> list[MCPServerSpec]:
                 resolved_headers[header_name] = raw_value
             if "command" in item or "args" in item or "env" in item:
                 raise ValueError("Remote MCP configuration uses url, headers, and oauth, not command, args, or env.")
-            specs.append(MCPServerSpec(name, None, (), {}, url, resolved_headers, oauth_client_id))
+            specs.append(MCPServerSpec(name, None, (), {}, url, resolved_headers, oauth_client_id, oauth_client_metadata_url))
             seen.add(name)
             continue
         command, args, extra_env = item.get("command"), item.get("args", []), item.get("env", {})
@@ -642,7 +660,8 @@ class _StreamableHTTPClient:
                 headers["Mcp-Session-Id"] = self.session_id
         if self._oauth_authorized:
             try:
-                token = oauth_access_token(self.spec.url, None, self.oauth_port, self.spec.oauth_client_id, self.event_callback)
+                token = oauth_access_token(self.spec.url, None, self.oauth_port, self.spec.oauth_client_id,
+                                           self.event_callback, configured_client_metadata_url=self.spec.oauth_client_metadata_url)
                 self._set_oauth_token(token)
             except ValueError as exc:
                 raise ValueError(self._redact(str(exc))) from exc
@@ -697,6 +716,7 @@ class _StreamableHTTPClient:
                 token = oauth_access_token(
                     self.spec.url, oauth_challenge, self.oauth_port, self.spec.oauth_client_id, self.event_callback,
                     force_refresh=not scope_upgrade, force_reauthorize=scope_upgrade,
+                    configured_client_metadata_url=self.spec.oauth_client_metadata_url,
                 )
             except ValueError as exc:
                 raise ValueError(self._redact(str(exc))) from exc

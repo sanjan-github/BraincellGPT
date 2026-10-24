@@ -128,6 +128,18 @@ class MCPOAuthFlowTests(unittest.TestCase):
         self.assertNotIn(server, mcp_oauth._TOKENS)
         delete.assert_called_once_with(mcp_oauth._token_store_key(server))
 
+    def test_cimd_client_id_is_used_only_when_authorization_server_advertises_support(self):
+        metadata = {"client_id_metadata_document_supported": True}
+        cimd_url = "https://braincell.example.test/oauth/client.json"
+        with patch("backend.mcp_oauth._https_endpoint") as validate:
+            self.assertEqual(mcp_oauth._register_client(metadata, "https://auth.example.test", "http://127.0.0.1:8000/cb", None, cimd_url), cimd_url)
+        validate.assert_called_once_with(cimd_url)
+        with self.assertRaisesRegex(ValueError, "does not advertise"):
+            mcp_oauth._register_client({}, "https://auth.example.test", "http://127.0.0.1:8000/cb", None, cimd_url)
+
+    def test_cimd_url_is_not_required_when_pre_registered_id_is_configured(self):
+        self.assertEqual(mcp_oauth._register_client({}, "https://auth.example.test", "http://127.0.0.1:8000/cb", "registered-id", "https://unused.example.test/client.json"), "registered-id")
+
     def test_oauth_metadata_urls_reject_non_https_and_private_hosts(self):
         with self.assertRaisesRegex(ValueError, "public HTTPS"):
             mcp_oauth._https_endpoint("http://auth.example.test/token")

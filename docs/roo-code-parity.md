@@ -48,8 +48,7 @@ and extension-host APIs are outside this backend port.
 
 ## Remaining backend work
 
-1. Add OAuth Client ID Metadata Documents and broaden credential-store
-   validation across supported desktop platforms.
+1. Broaden credential-store validation across supported desktop platforms.
 2. Expand provider adapters and model capability metadata.
 3. Add end-to-end acceptance coverage for OAuth callback, task persistence,
    approval, streaming,
@@ -100,13 +99,20 @@ discovers protected-resource and authorization-server metadata, uses PKCE S256
 and the MCP URL as the OAuth `resource`, then retries after the loopback callback.
 Configure `oauth.client_id` for a pre-registered public client; otherwise the
 client uses the authorization server's dynamic registration endpoint. OAuth
-tokens are held only in memory and must be authorized again after restarting the
-app. Windows tokens use DPAPI-protected files. Linux uses Secret Service through
+tokens persist through the native credential store when available. Windows
+tokens use DPAPI-protected files. Linux uses Secret Service through
 `secret-tool` or a supported keyring backend. macOS Keychain support is
 available when the optional `keyring` package is installed. If the OS store is
 unavailable, tokens stay in process memory and must be authorized again after
 app restart; no plaintext fallback is used. Remote URLs and OAuth endpoints
 must resolve only to public IP addresses.
+For OAuth servers that advertise Client ID Metadata Document support, configure
+`oauth.client_id_metadata_url` with a stable HTTPS URL hosting BrainCellGPT's
+client metadata. The hosted document's `client_id` must exactly equal that URL,
+and its `redirect_uris` must include the app callback URL, normally
+`http://127.0.0.1:8000/api/mcp/oauth/callback`. Use either this field or
+`oauth.client_id`, not both. The authorization server must advertise
+`client_id_metadata_document_supported: true`; otherwise CIMD is refused.
 MCP servers are available for streaming Code, Debug, or Orchestrator runs. Every
 MCP tool call pauses for the same session-scoped approval operation. Local
 processes start without a shell and with filtered environments, and remain alive
@@ -134,4 +140,31 @@ Remote server example:
     "oauth": {"client_id": "registered-public-client"}
   }
 ]
+```
+
+For an OAuth authorization server that supports CIMD, the remote configuration
+can instead point to a hosted client document:
+
+```json
+[
+  {
+    "name": "remote-tools",
+    "url": "https://mcp.example.com/mcp",
+    "oauth": {"client_id_metadata_url": "https://braincell.example.com/oauth/client.json"}
+  }
+]
+```
+
+That hosted JSON document must use its own URL as `client_id` and include the
+same loopback callback URI in `redirect_uris`:
+
+```json
+{
+  "client_id": "https://braincell.example.com/oauth/client.json",
+  "client_name": "BrainCellGPT",
+  "redirect_uris": ["http://127.0.0.1:8000/api/mcp/oauth/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}
 ```
