@@ -3,91 +3,62 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0D0E11">
-<title>BrainCellGPT — One braincell, infinite confusion.</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#030407">
+<title>BraincellGPT — One Cell, Infinite Confusion</title>
+<!-- Three.js for Photorealistic 3D Earth & Cosmic Space -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 /* ==========================================================================
-   Fluid Design Tokens — Dynamic Theme Palette (Anti-Slop Luxury System)
+   Design Tokens — Apple SF Pro, Space Architecture, Fibonacci Scale
    ========================================================================== */
 :root {
-  --font-display: 'Instrument Serif', Georgia, serif;
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", -system-ui, sans-serif;
 
-  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-smooth: cubic-bezier(0.25, 0.8, 0.25, 1);
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Fibonacci Spacing */
+  --space-1: 5px;
+  --space-2: 8px;
+  --space-3: 13px;
+  --space-4: 21px;
+  --space-5: 34px;
+  --space-6: 55px;
+  --space-7: 89px;
 
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  /* Fibonacci Type Scale */
+  --text-micro: 11px;
+  --text-caption: 13px;
+  --text-body: 16px;
+  --text-subhead: 21px;
+  --text-headline: 34px;
+  --text-display: 55px;
+
+  /* Apple Squircle Radii (r = s * 0.2237) */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 22px;
   --radius-pill: 9999px;
+
+  /* Cosmic Space Palette */
+  --color-base: #030407;
+  --color-sidebar: rgba(10, 12, 18, 0.82);
+  --color-surface: rgba(16, 20, 28, 0.74);
+  --color-surface-hover: rgba(26, 32, 44, 0.88);
+  --color-border: rgba(255, 255, 255, 0.09);
+  --color-border-hover: rgba(255, 255, 255, 0.18);
+  
+  --text-primary: #FFFFFF;
+  --text-secondary: #9DA3B4;
+  --text-tertiary: #5E6375;
+  --composer-bg: rgba(13, 16, 24, 0.85);
+
+  --color-accent: #0084FF;
+  --color-accent-hover: #1A90FF;
+  --color-accent-text: #FFFFFF;
+
+  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* Luxury Dark Mode Palette (Default) */
-:root, [data-theme="dark"] {
-  color-scheme: dark;
-  --bg-canvas: #0D0E11;
-  --bg-sidebar: #090A0C;
-  --bg-surface: #131418;
-  --bg-elevated: #191B21;
-  --bg-subtle: rgba(255, 255, 255, 0.035);
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-active: rgba(255, 255, 255, 0.09);
-
-  --line-dim: rgba(255, 255, 255, 0.07);
-  --line-light: rgba(255, 255, 255, 0.13);
-  --line-focus: #D4AF37;
-
-  --text-main: #EDEDF0;
-  --text-dim: #989AA2;
-  --text-sub: #5E606B;
-
-  --accent-warm: #D4AF37;
-  --accent-tint: rgba(212, 175, 55, 0.12);
-  --accent-hover: #E5C358;
-  --accent-text: #0D0E11;
-
-  --dock-glass: rgba(19, 20, 24, 0.84);
-  --glass-border: rgba(255, 255, 255, 0.09);
-  --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
-  --ambient-glow: rgba(212, 175, 55, 0.04);
-}
-
-/* Warm Luxury Light Mode Palette */
-[data-theme="light"] {
-  color-scheme: light;
-  --bg-canvas: #F9F9F6;
-  --bg-sidebar: #F1F1EB;
-  --bg-surface: #FFFFFF;
-  --bg-elevated: #FFFFFF;
-  --bg-subtle: rgba(0, 0, 0, 0.03);
-  --bg-hover: rgba(0, 0, 0, 0.05);
-  --bg-active: rgba(0, 0, 0, 0.08);
-
-  --line-dim: rgba(0, 0, 0, 0.08);
-  --line-light: rgba(0, 0, 0, 0.14);
-  --line-focus: #9E7525;
-
-  --text-main: #141517;
-  --text-dim: #545761;
-  --text-sub: #848792;
-
-  --accent-warm: #9E7525;
-  --accent-tint: rgba(158, 117, 37, 0.11);
-  --accent-hover: #86611B;
-  --accent-text: #FFFFFF;
-
-  --dock-glass: rgba(255, 255, 255, 0.88);
-  --glass-border: rgba(0, 0, 0, 0.08);
-  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-  --ambient-glow: rgba(158, 117, 37, 0.03);
-}
-
-/* Global Reset & Box Sizing */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -96,21 +67,25 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-::selection {
-  background: var(--accent-warm);
-  color: var(--accent-text);
-}
-
 html, body {
   height: 100%;
   width: 100%;
-  background: var(--bg-canvas);
-  color: var(--text-main);
-  font-family: var(--font-body);
-  font-size: 14px;
-  line-height: 1.6;
+  background: var(--color-base);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: var(--text-body);
+  line-height: 1.5;
   overflow: hidden;
-  transition: background-color 220ms ease, color 220ms ease;
+}
+
+/* Fullscreen Space Canvas */
+#spaceCanvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
 }
 
 button, input, select, textarea {
@@ -124,11 +99,11 @@ button {
   background: transparent;
   outline: none;
   touch-action: manipulation;
-  transition: transform 120ms var(--ease-spring), background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+  transition: transform 120ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease;
 }
 
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--accent-warm);
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
@@ -137,115 +112,173 @@ button:active {
 }
 
 /* ==========================================================================
-   Fluid Shell Layout
+   Shell Layout — Desktop & Mobile Cohesive
    ========================================================================== */
-.shell {
-  display: grid;
-  grid-template-columns: clamp(240px, 20vw, 280px) 1fr;
+.app-shell {
+  display: flex;
   height: 100vh;
   width: 100vw;
+  padding: var(--space-3);
+  gap: var(--space-3);
   position: relative;
+  z-index: 1;
   overflow: hidden;
 }
 
 /* ==========================================================================
-   Sidebar Navigation
+   Sidebar Navigation (With Smooth Collapse & Restore)
    ========================================================================== */
 .sidebar {
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--line-dim);
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--color-sidebar);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
-  padding: clamp(16px, 2vw, 24px) 18px clamp(16px, 2vw, 20px) 18px;
+  padding: var(--space-4) var(--space-3);
   user-select: none;
   z-index: 40;
-  transition: transform 260ms var(--ease-drawer), background-color 220ms ease, border-color 220ms ease;
+  transition: transform 260ms var(--ease-drawer), width 240ms ease, padding 240ms ease, opacity 200ms ease;
 }
 
-.brand-row {
+.sidebar.collapsed {
+  width: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--line-dim);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.brand-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+  color: var(--text-primary);
+}
+
+.brand-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: var(--color-accent);
 }
 
 .brand-title {
-  font-family: var(--font-display);
-  font-size: 24px;
-  letter-spacing: -0.3px;
-  color: var(--text-main);
-  text-decoration: none;
-  font-weight: 400;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
+  font-size: var(--text-body);
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.brand-title em {
-  font-style: italic;
-  color: var(--accent-warm);
-  transition: color 200ms ease;
-}
-
-.mobile-close-sidebar {
-  display: none;
+.btn-sidebar-collapse {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-sm);
-  color: var(--text-dim);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+}
+
+.btn-sidebar-collapse:hover {
+  background: var(--color-surface-hover);
+  color: var(--text-primary);
+}
+
+/* "+ New Chat" Button */
+.btn-new-chat {
+  display: flex;
   align-items: center;
   justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 10px var(--space-3);
+  margin-top: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--text-primary);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  transition: all 140ms ease;
 }
 
-.btn-new {
-  margin-top: 16px;
+.btn-new-chat:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-hover);
+}
+
+/* Search Bar */
+.search-chats-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 10px 14px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
   border-radius: var(--radius-sm);
-  background: var(--bg-subtle);
-  border: 1px solid var(--line-dim);
-  color: var(--text-main);
-  font-size: 13px;
-  font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
 }
 
-.btn-new:hover {
-  background: var(--bg-hover);
-  border-color: var(--line-light);
+.search-chats-bar input {
+  border: none;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  font-size: var(--text-caption);
+  color: var(--text-primary);
 }
 
-.nav-history {
+.search-chats-bar input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* Nav Session History */
+.nav-history-wrapper {
   flex: 1;
   overflow-y: auto;
-  margin: 20px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  margin: var(--space-3) 0;
   scrollbar-width: thin;
 }
 
-.nav-heading {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-sub);
-  letter-spacing: 0.8px;
+.nav-section-title {
+  font-size: var(--text-micro);
+  font-weight: 700;
   text-transform: uppercase;
-  padding: 8px 10px 4px 10px;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  padding: var(--space-1) var(--space-2) var(--space-2) var(--space-2);
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .history-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
-  color: var(--text-dim);
-  font-size: 13px;
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -255,281 +288,378 @@ button:active {
 }
 
 .history-item:hover {
-  color: var(--text-main);
-  background: var(--bg-hover);
+  background: var(--color-surface-hover);
+  color: var(--text-primary);
 }
 
 .history-item.active {
-  color: var(--text-main);
-  background: var(--accent-tint);
-  border-color: var(--line-dim);
-  font-weight: 500;
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
-.sidebar-foot {
-  padding-top: 14px;
-  border-top: 1px solid var(--line-dim);
+.history-item svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/* Sidebar Footer User Pill */
+.sidebar-user-pill {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  margin-top: auto;
 }
 
-.presence-status {
+.user-profile-info {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text-dim);
+  gap: var(--space-2);
 }
 
-.dot-indicator {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent-warm);
-  box-shadow: 0 0 6px var(--accent-warm);
-  flex-shrink: 0;
-}
-
-.foot-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.btn-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
-  color: var(--text-dim);
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
   display: grid;
   place-items: center;
-  border: 1px solid transparent;
-  transition: all 150ms ease;
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: var(--text-caption);
 }
 
-.btn-icon:hover {
-  color: var(--text-main);
-  background: var(--bg-hover);
-  border-color: var(--line-dim);
+.user-names {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name-primary {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.user-name-secondary {
+  font-size: var(--text-micro);
+  color: var(--text-tertiary);
+}
+
+.btn-sidebar-settings {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-xs);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+}
+
+.btn-sidebar-settings:hover {
+  color: var(--text-primary);
+  background: var(--color-surface-hover);
 }
 
 /* ==========================================================================
-   Main Viewport
+   Main Canvas Workspace
    ========================================================================== */
-.main-viewport {
+.main-canvas {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   position: relative;
   overflow: hidden;
-  background: var(--bg-canvas);
-  transition: background-color 220ms ease;
 }
 
-/* Header Topbar */
-.topbar {
-  height: 56px;
-  padding: 0 clamp(16px, 3vw, 32px);
+/* Top Navigation Bar */
+.top-nav {
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--line-dim);
-  background: var(--bg-canvas);
+  padding: 0 var(--space-2);
   z-index: 20;
   flex-shrink: 0;
-  transition: background-color 220ms ease, border-color 220ms ease;
 }
 
-.topbar-left {
+.top-left-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-2);
 }
 
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.mobile-menu-btn {
-  display: none;
+/* Persistent Sidebar Restore/Toggle Button (Always visible on desktop and mobile) */
+.btn-sidebar-toggle {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-sm);
-  color: var(--text-main);
-  border: 1px solid var(--line-dim);
-  background: var(--bg-subtle);
+  background: var(--color-surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--color-border);
+  color: var(--text-primary);
+  display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.mobile-menu-btn:hover {
-  background: var(--bg-hover);
-}
-
-.model-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-subtle);
-  border: 1px solid var(--line-dim);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-dim);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.model-tag:hover {
-  color: var(--text-main);
-  border-color: var(--line-light);
-  background: var(--bg-hover);
-}
-
-/* Theme Toggle Button */
-.theme-toggle-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  display: grid;
-  place-items: center;
-  color: var(--text-dim);
-  border: 1px solid var(--line-dim);
-  background: var(--bg-subtle);
-  transition: all 150ms ease;
-}
-
-.theme-toggle-btn:hover {
-  color: var(--text-main);
-  background: var(--bg-hover);
-  border-color: var(--line-light);
-}
-
-.theme-toggle-btn svg {
-  width: 16px;
-  height: 16px;
-  stroke-width: 1.9;
-}
-
-/* ==========================================================================
-   Chat Scroll & Core Canvas
-   ========================================================================== */
-.chat-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 clamp(16px, 3.5vw, 40px);
-  display: flex;
-  flex-direction: column;
-  scrollbar-width: thin;
-}
-
-.chat-center {
-  max-width: 740px;
-  width: 100%;
-  margin: 0 auto;
-  padding: clamp(28px, 4vh, 48px) 0 24px 0;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-/* Fluid Typographic Welcome Hero */
-.editorial-hero {
-  margin: auto auto clamp(24px, 4vh, 40px) auto;
-  width: 100%;
-  animation: heroEntrance 280ms var(--ease-spring);
-}
-
-.hero-statement {
-  font-family: var(--font-display);
-  font-size: clamp(2.4rem, 5.5vw + 0.5rem, 3.8rem);
-  line-height: 1.06;
-  font-weight: 400;
-  letter-spacing: -0.025em;
-  color: var(--text-main);
-  margin-bottom: 12px;
-}
-
-.hero-statement em {
-  font-style: italic;
-  color: var(--accent-warm);
-  transition: color 200ms ease;
-}
-
-.hero-subtext {
-  font-size: clamp(14px, 1.2vw, 15.5px);
-  color: var(--text-dim);
-  max-width: 520px;
-  line-height: 1.6;
-  margin-bottom: clamp(28px, 4vh, 40px);
-}
-
-/* Typographic Starters (Anti-Slop Clean List) */
-.editorial-starters {
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--line-dim);
-}
-
-.starter-line {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  padding: clamp(14px, 2vh, 18px) 6px;
-  border-bottom: 1px solid var(--line-dim);
-  cursor: pointer;
-  background: transparent;
-  text-align: left;
-  width: 100%;
   transition: all 140ms ease;
 }
 
-.starter-line:hover {
-  padding-left: 12px;
-  padding-right: 12px;
-  background: var(--bg-subtle);
+.btn-sidebar-toggle:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-hover);
 }
 
-.starter-text {
-  font-size: 14px;
-  color: var(--text-main);
-  font-weight: 400;
-  line-height: 1.5;
-}
-
-.starter-meta {
-  font-size: 11.5px;
-  color: var(--text-sub);
-  flex-shrink: 0;
+.active-provider-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  font-size: var(--text-caption);
   font-weight: 500;
-  letter-spacing: 0.3px;
-  transition: color 140ms ease;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 140ms ease;
 }
 
-.starter-line:hover .starter-meta {
-  color: var(--accent-warm);
+.active-provider-pill:hover {
+  border-color: var(--color-border-hover);
+  color: var(--text-primary);
+}
+
+.status-beacon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 8px #10B981;
+}
+
+.top-right-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.icon-btn-pill {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--color-border);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  transition: all 140ms ease;
+}
+
+.icon-btn-pill:hover {
+  border-color: var(--color-border-hover);
+  color: var(--text-primary);
 }
 
 /* ==========================================================================
-   Chat Flow & Turn Elements
+   Chat Viewport Canvas
    ========================================================================== */
-.messages-flow {
+.chat-viewport {
+  flex: 1;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  padding: 0 var(--space-4);
+  scrollbar-width: thin;
+}
+
+.content-center {
+  max-width: 740px;
   width: 100%;
+  margin: auto auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: var(--space-4);
+}
+
+/* ==========================================================================
+   Real Earth Globe & Hero Statement
+   ========================================================================== */
+.hero-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: 100%;
+  margin-bottom: var(--space-4);
+}
+
+/* Interactive 3D Earth Globe Container */
+.globe-wrapper {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  margin-bottom: var(--space-3);
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.globe-wrapper:active {
+  cursor: grabbing;
+}
+
+#globeContainer {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  filter: drop-shadow(0 0 28px rgba(0, 132, 255, 0.45));
+}
+
+.hero-title-main {
+  font-size: var(--text-headline);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  line-height: 1.15;
+  margin-bottom: var(--space-1);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+}
+
+.hero-caption {
+  font-size: var(--text-body);
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-5);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+/* ==========================================================================
+   Composer Box — Translucent Space Obsidian
+   ========================================================================== */
+.composer-container {
+  width: 100%;
+  max-width: 720px;
+  background: var(--composer-bg);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 14px var(--space-4) 10px var(--space-4);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+  margin-bottom: var(--space-3);
+}
+
+.composer-container:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 20px rgba(0, 132, 255, 0.28), 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+.composer-textarea {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  font-weight: 400;
+  line-height: 1.5;
+  min-height: 52px;
+  max-height: 200px;
+  padding: 4px 0 8px 0;
+}
+
+.composer-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.composer-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Model Badge: Natural Transparent */
+.model-info-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  user-select: none;
+}
+
+.model-info-pill svg {
+  color: var(--color-accent);
+}
+
+/* Centered Upward Send Arrow */
+.btn-submit-pill {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 140ms ease;
+  box-shadow: 0 2px 10px rgba(0, 132, 255, 0.3);
+}
+
+.btn-submit-pill:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  box-shadow: 0 4px 14px rgba(0, 132, 255, 0.5);
+}
+
+.btn-submit-pill:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-submit-pill svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+/* ==========================================================================
+   Messages Flow Area
+   ========================================================================== */
+.messages-flow {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
 }
 
 .chat-turn {
   display: flex;
-  gap: 16px;
-  animation: turnEntrance 220ms var(--ease-spring);
+  gap: var(--space-3);
 }
 
 .chat-turn.user {
@@ -541,35 +671,42 @@ button:active {
 }
 
 .user-message-panel {
-  background: var(--bg-surface);
-  border: 1px solid var(--line-dim);
+  background: var(--color-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 12px 18px;
-  font-size: 14.5px;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-body);
   line-height: 1.6;
-  color: var(--text-main);
+  color: var(--text-primary);
   max-width: min(84%, 600px);
   white-space: pre-wrap;
   word-break: break-word;
-  box-shadow: var(--card-shadow);
 }
 
 .assistant-message-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-width: 92%;
+  gap: var(--space-2);
+  max-width: 90%;
+  background: var(--color-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
 }
 
 .assistant-body {
-  color: var(--text-main);
-  font-size: 15px;
-  line-height: 1.7;
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  line-height: 1.65;
   word-break: break-word;
 }
 
 .assistant-body p {
-  margin-bottom: 14px;
+  margin-bottom: var(--space-3);
   white-space: pre-wrap;
 }
 
@@ -580,193 +717,84 @@ button:active {
 .message-meta-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-top: 2px;
+  gap: var(--space-2);
 }
 
 .btn-action-text {
-  font-size: 11.5px;
-  color: var(--text-sub);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  color: var(--text-secondary);
   background: transparent;
   padding: 4px 8px;
   border-radius: var(--radius-xs);
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  border: 1px solid transparent;
+  gap: 4px;
 }
 
 .btn-action-text:hover {
-  color: var(--text-main);
-  background: var(--bg-hover);
-  border-color: var(--line-dim);
+  color: var(--text-primary);
+  background: var(--color-surface-hover);
 }
 
-/* Organic Thinking Pulse */
 .thinking-notice {
-  font-size: 13.5px;
-  font-style: italic;
-  color: var(--accent-warm);
+  font-size: var(--text-caption);
+  color: var(--color-accent);
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-tint);
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
 }
 
 .thinking-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-warm);
-  animation: organicPulse 1.4s infinite ease-in-out;
+  background: var(--color-accent);
+  animation: pulse 1.4s infinite ease-in-out;
 }
 
-@keyframes organicPulse {
-  0%, 100% { opacity: 0.2; transform: scale(0.85); }
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
   50% { opacity: 1; transform: scale(1.15); }
 }
 
+/* Natural Error Banner */
 .error-banner {
-  margin: 16px 0;
-  padding: 12px 16px;
-  border: 1px solid rgba(224, 108, 98, 0.35);
-  border-radius: var(--radius-sm);
-  background: rgba(224, 108, 98, 0.08);
-  color: #E57373;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* ==========================================================================
-   Input Dock (Fluid Tactile Glass)
-   ========================================================================== */
-.input-dock {
-  padding: 0 clamp(16px, 3.5vw, 40px) max(20px, env(safe-area-inset-bottom)) clamp(16px, 3.5vw, 40px);
-  flex-shrink: 0;
-  position: relative;
-  z-index: 10;
-}
-
-.input-box {
-  max-width: 740px;
-  margin: 0 auto;
-  background: var(--dock-glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-md);
-  padding: 12px 14px 10px 16px;
-  box-shadow: var(--card-shadow);
-  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 200ms ease;
-  display: flex;
-  flex-direction: column;
-}
-
-.input-box:focus-within {
-  border-color: var(--line-focus);
-  box-shadow: 0 6px 24px var(--ambient-glow), var(--card-shadow);
-}
-
-.input-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.input-textarea {
-  flex: 1;
+  margin: var(--space-3) auto;
+  padding: var(--space-1) 0;
   background: transparent;
   border: none;
-  outline: none;
-  resize: none;
-  color: var(--text-main);
-  font-size: 14.5px;
-  line-height: 1.5;
-  height: 24px;
-  max-height: 180px;
-  padding: 2px 0 4px 0;
-}
-
-.input-textarea::placeholder {
-  color: var(--text-sub);
-}
-
-.btn-submit {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-warm);
-  color: var(--accent-text);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  margin-bottom: 1px;
-  transition: background-color 140ms ease, opacity 140ms ease, transform 120ms var(--ease-spring);
-}
-
-.btn-submit:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.btn-submit:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.btn-submit svg {
-  width: 14px;
-  height: 14px;
-  stroke-width: 2.4;
-}
-
-.input-footer {
+  color: #FF5A5F;
+  font-size: var(--text-caption);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding-top: 8px;
-  margin-top: 6px;
-  border-top: 1px solid var(--line-dim);
+  justify-content: center;
+  gap: var(--space-2);
 }
 
-.input-hint {
-  font-size: 11.5px;
-  color: var(--text-sub);
+.error-mark {
+  font-weight: 700;
+  font-size: var(--text-caption);
+  line-height: 1;
+  color: #FF5A5F;
 }
 
 /* ==========================================================================
-   Mobile Sidebar Overlay & Drawer Settings Panel
+   Settings Drawer Panel
    ========================================================================== */
-.sidebar-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 220ms ease;
-  z-index: 35;
-}
-
-.sidebar-overlay.open {
-  opacity: 1;
-  pointer-events: auto;
-}
-
 .drawer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 220ms ease;
+  transition: opacity 200ms ease;
   z-index: 100;
 }
 
@@ -782,14 +810,15 @@ button:active {
   bottom: 0;
   width: 100%;
   max-width: 420px;
-  background: var(--bg-surface);
-  border-left: 1px solid var(--line-dim);
+  background: rgba(12, 14, 20, 0.94);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border-left: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   transform: translateX(100%);
-  transition: transform 260ms var(--ease-drawer), background-color 220ms ease;
+  transition: transform 260ms var(--ease-drawer);
   z-index: 101;
-  box-shadow: -6px 0 32px rgba(0, 0, 0, 0.25);
 }
 
 .drawer-panel.open {
@@ -797,62 +826,59 @@ button:active {
 }
 
 .drawer-head {
-  padding: 18px 24px;
-  border-bottom: 1px solid var(--line-dim);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
 .drawer-title {
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 400;
-  letter-spacing: -0.2px;
-  color: var(--text-main);
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .drawer-body {
-  padding: 24px;
+  padding: var(--space-4);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  scrollbar-width: thin;
+  gap: var(--space-4);
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .form-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-dim);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .form-field {
   width: 100%;
-  background: var(--bg-subtle);
-  border: 1px solid var(--line-dim);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  padding: 9px 12px;
-  font-size: 13.5px;
-  color: var(--text-main);
-  transition: border-color 140ms ease, background-color 140ms ease;
+  padding: 10px var(--space-3);
+  font-size: var(--text-caption);
+  color: var(--text-primary);
+  transition: all 140ms ease;
 }
 
 .form-field:focus {
-  border-color: var(--line-focus);
+  border-color: var(--color-accent);
   outline: none;
 }
 
 .form-actions {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 4px;
 }
 
@@ -865,67 +891,45 @@ button:active {
 }
 
 .btn-secondary {
-  padding: 8px 12px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--line-dim);
+  padding: 8px var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text-main);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-primary);
   text-align: center;
   transition: all 140ms ease;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--line-light);
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-hover);
 }
 
 .btn-secondary:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 .form-status {
-  font-size: 12px;
-  color: var(--text-sub);
+  font-size: var(--text-micro);
+  color: var(--text-tertiary);
   line-height: 1.5;
   padding-top: 2px;
 }
 
-.form-status[data-state="checking"] { color: var(--accent-warm); }
-.form-status[data-state="success"] { color: #81C784; }
-.form-status[data-state="error"] { color: #E57373; }
-
-/* Entrance Animations */
-@keyframes heroEntrance {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes turnEntrance {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+.form-status[data-state="checking"] { color: #F59E0B; }
+.form-status[data-state="success"] { color: #10B981; }
+.form-status[data-state="error"] { color: #EF4444; }
 
 /* ==========================================================================
-   Responsive Breakpoints & Fluid Mobile Adaptation
+   Responsive Adaptations
    ========================================================================== */
 @media (max-width: 768px) {
-  .shell {
-    grid-template-columns: 1fr;
+  .app-shell {
+    padding: 0;
+    gap: 0;
   }
 
   .sidebar {
@@ -933,192 +937,157 @@ button:active {
     top: 0;
     left: 0;
     bottom: 0;
-    width: min(82vw, 300px);
+    width: 280px;
+    border-radius: 0;
     transform: translateX(-100%);
-    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.3);
+    box-shadow: 12px 0 32px rgba(0, 0, 0, 0.7);
   }
 
   .sidebar.mobile-open {
     transform: translateX(0);
   }
 
-  .mobile-close-sidebar {
-    display: inline-flex;
+  .chat-viewport {
+    padding: 0 var(--space-3);
   }
 
-  .mobile-menu-btn {
-    display: inline-flex;
-  }
-
-  .chat-scroll {
-    padding: 0 16px;
-  }
-
-  .chat-center {
-    padding: 20px 0 16px 0;
-  }
-
-  .input-dock {
-    padding: 0 14px max(14px, env(safe-area-inset-bottom)) 14px;
-  }
-
-  .user-message-panel {
-    max-width: 90%;
-  }
-
-  .starter-line {
-    flex-direction: column;
-    gap: 4px;
-    align-items: flex-start;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  .hero-title-main {
+    font-size: var(--text-subhead);
   }
 }
 </style>
 </head>
 <body>
-<div class="shell">
-  <!-- Mobile Sidebar Backdrop -->
-  <div class="sidebar-overlay" id="sidebarOverlay" aria-hidden="true"></div>
+<!-- Fullscreen Parallax Outer Space Canvas -->
+<canvas id="spaceCanvas"></canvas>
 
-  <!-- Studio Sidebar -->
+<div class="app-shell">
+  <!-- Mobile Sidebar Overlay -->
+  <div class="drawer-overlay" id="sidebarOverlay" aria-hidden="true"></div>
+
+  <!-- Sidebar -->
   <aside class="sidebar" id="appSidebar">
-    <div class="brand-row">
-      <a href="/" class="brand-title">BrainCell <em>GPT</em></a>
-      <button class="mobile-close-sidebar btn-icon" id="closeSidebarMobile" aria-label="Close sidebar">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    <div class="sidebar-header">
+      <a href="/" class="brand-badge">
+        <div class="brand-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>
+        </div>
+        <span class="brand-title">BraincellGPT</span>
+      </a>
+      <button class="btn-sidebar-collapse" id="collapseSidebarBtn" aria-label="Collapse sidebar" title="Collapse sidebar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
       </button>
     </div>
 
-    <button class="btn-new" id="newChat">
-      <span>New session</span>
-      <span style="font-size: 11px; color: var(--text-sub);">↵</span>
+    <!-- "+ New Chat" -->
+    <button class="btn-new-chat" id="newChat">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      <span>New Chat</span>
     </button>
 
-    <div class="nav-history">
-      <div class="nav-heading">Recent</div>
-      <div class="history-item active" id="activeThreadItem">
-        <span id="activeThreadTitle">Current session</span>
+    <!-- Search Chats -->
+    <div class="search-chats-bar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="text" placeholder="Search chats..." aria-label="Search chats">
+    </div>
+
+    <!-- History List -->
+    <div class="nav-history-wrapper">
+      <div class="nav-section-title">Recent Chats</div>
+      <div class="history-list">
+        <div class="history-item active" id="activeThreadItem">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span id="activeThreadTitle">Current Session</span>
+        </div>
       </div>
     </div>
 
-    <div class="sidebar-foot">
-      <div class="presence-status">
-        <span class="dot-indicator"></span>
-        <span>Online</span>
+    <!-- Sidebar Bottom User Pill -->
+    <div class="sidebar-user-pill">
+      <div class="user-profile-info">
+        <div class="user-avatar">B</div>
+        <div class="user-names">
+          <span class="user-name-primary">Braincell User</span>
+          <span class="user-name-secondary">Active Profile</span>
+        </div>
       </div>
-      <div class="foot-controls">
-        <button class="btn-icon theme-toggle-btn" id="sidebarThemeToggle" aria-label="Toggle visual theme" title="Toggle theme">
-          <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="display:none;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-          <svg class="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-        </button>
-        <button class="btn-icon" id="sidebarSettingsBtn" aria-label="Settings" title="Settings">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-        </button>
-      </div>
+      <button class="btn-sidebar-settings" id="sidebarSettingsBtn" aria-label="Settings" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
     </div>
   </aside>
 
-  <!-- Main Viewport -->
-  <main class="main-viewport">
-    <header class="topbar">
-      <div class="topbar-left">
-        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open sidebar menu">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+  <!-- Main Canvas -->
+  <main class="main-canvas">
+    <header class="top-nav">
+      <div class="top-left-actions">
+        <!-- Persistent Sidebar Toggle Button (Restores sidebar when hidden) -->
+        <button class="btn-sidebar-toggle" id="sidebarToggleBtn" aria-label="Toggle sidebar" title="Toggle sidebar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
         </button>
-        <div class="model-tag" id="topbarModelBadge">
-          <span class="dot-indicator"></span>
+        <div class="active-provider-pill" id="topbarModelBadge">
+          <span class="status-beacon"></span>
           <span id="currentModelDisplay">Groq · Llama 3.3</span>
         </div>
       </div>
 
-      <div class="topbar-right">
-        <button class="theme-toggle-btn" id="topThemeToggle" aria-label="Toggle visual theme" title="Toggle theme">
-          <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="display:none;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-          <svg class="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-        </button>
-        <button class="btn-icon" id="openSettingsTop" aria-label="Settings" title="Configure model">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      <div class="top-right-actions">
+        <button class="icon-btn-pill" id="openSettingsTop" aria-label="Settings" title="Configure model">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         </button>
       </div>
     </header>
 
-    <!-- Scrollable Chat Canvas -->
-    <section class="chat-scroll" id="chatArea">
-      <div class="chat-center">
-        <!-- Natural Editorial Hero -->
-        <div class="editorial-hero" id="welcome">
-          <h1 class="hero-statement">One braincell,<br><em>infinite confusion.</em></h1>
-          <p class="hero-subtext">Designed for delightfully chaotic conversations, bizarre logic leaps, and unpredictable dialogue.</p>
+    <!-- Scrollable Chat Viewport -->
+    <section class="chat-viewport" id="chatArea">
+      <div class="content-center">
+        <!-- Welcome Stage -->
+        <div class="hero-stage" id="welcome">
+          <!-- Real 3D Earth Globe Container -->
+          <div class="globe-wrapper" id="globeTrigger" title="Drag to freely rotate Earth and space in any direction">
+            <div id="globeContainer"></div>
+          </div>
 
-          <!-- Typographic List Starters -->
-          <div class="editorial-starters">
-            <button class="starter-line" data-prompt="Remember this: our project is BrainCellGPT, the most chaotic AI yet.">
-              <span class="starter-text">Test contextual memory across absurd conversational twists</span>
-              <span class="starter-meta">Memory</span>
-            </button>
+          <h1 class="hero-title-main">BraincellGPT</h1>
+          <p class="hero-caption">One Cell, Infinite Confusion</p>
 
-            <button class="starter-line" data-prompt="Explain quantum mechanics like you only have one neuron left.">
-              <span class="starter-text">Complex physics explained with severe braincell deficiency</span>
-              <span class="starter-meta">Science</span>
-            </button>
+          <!-- Composer Box -->
+          <div class="composer-container" id="composerCard">
+            <form id="chatForm">
+              <textarea class="composer-textarea" id="messageInput" rows="1" maxlength="12000" placeholder="Type a message or prompt..." aria-label="Message BraincellGPT"></textarea>
+              <div class="composer-bottom-bar">
+                <div class="model-info-pill" id="modelDisplayPill">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>
+                  <span id="modelInfoText">Llama 3.3</span>
+                </div>
 
-            <button class="starter-line" data-prompt="Roast my code: while(true) { try { run(); } catch(e) { /* pray */ } }">
-              <span class="starter-text">Blunt, satirical critique of broken software logic</span>
-              <span class="starter-meta">Critique</span>
-            </button>
-
-            <button class="starter-line" data-prompt="Invent a bizarre programming language with weird syntax.">
-              <span class="starter-text">Craft an esoteric language defying all compiler logic</span>
-              <span class="starter-meta">Invention</span>
-            </button>
+                <button class="btn-submit-pill" id="send" type="submit" aria-label="Send message">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
 
-        <!-- Messages Stream -->
+        <!-- Chat Stream -->
         <div class="messages-flow" id="messages"></div>
 
         <div id="error" class="error-banner" role="alert" hidden>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span class="error-mark">!</span>
           <span id="errorMessage">Something went wrong.</span>
         </div>
       </div>
     </section>
-
-    <!-- Refined Input Dock -->
-    <div class="input-dock">
-      <div class="input-box" id="composerCard">
-        <form id="chatForm">
-          <div class="input-row">
-            <textarea class="input-textarea" id="messageInput" rows="1" maxlength="12000" placeholder="Type a message or test BrainCell's limits..." aria-label="Message BrainCell"></textarea>
-            <button class="btn-submit" id="send" type="submit" aria-label="Send message">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
-            </button>
-          </div>
-        </form>
-
-        <div class="input-footer">
-          <span class="input-hint">Enter to send · Shift + Enter for newline</span>
-        </div>
-      </div>
-    </div>
   </main>
 </div>
 
-<!-- Settings Drawer -->
+<!-- Settings Drawer Panel -->
 <div class="drawer-overlay" id="drawerOverlay" aria-hidden="true"></div>
 <aside class="drawer-panel" id="settingsDrawer" aria-labelledby="settingsTitle" aria-hidden="true">
   <div class="drawer-head">
     <h2 class="drawer-title" id="settingsTitle">Model & Credentials</h2>
-    <button class="btn-icon" id="closeSettings" aria-label="Close settings">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    <button class="icon-btn-pill" id="closeSettings" aria-label="Close settings">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
     </button>
   </div>
   <div class="drawer-body">
@@ -1177,9 +1146,370 @@ button:active {
   </div>
 </aside>
 
+<!-- ==========================================================================
+     Real Earth 3D Engine (Three.js WebGL) & Parallax Space Simulation
+     ========================================================================== -->
 <script>
 (() => {
-  // DOM References
+  // ========================================================================
+  // 1. Fullscreen Parallax Outer Space Starfield Canvas
+  // ========================================================================
+  const spaceCanvas = document.querySelector("#spaceCanvas");
+  const sCtx = spaceCanvas.getContext("2d");
+
+  let spaceW = (spaceCanvas.width = window.innerWidth);
+  let spaceH = (spaceCanvas.height = window.innerHeight);
+
+  window.addEventListener("resize", () => {
+    spaceW = spaceCanvas.width = window.innerWidth;
+    spaceH = spaceCanvas.height = window.innerHeight;
+    initStars();
+  });
+
+  const STAR_COUNT = 1200;
+  const stars = [];
+
+  function initStars() {
+    stars.length = 0;
+    for (let i = 0; i < STAR_COUNT; i++) {
+      stars.push({
+        x: (Math.random() - 0.5) * spaceW * 2.8,
+        y: (Math.random() - 0.5) * spaceH * 2.8,
+        z: Math.random() * 1000 + 100,
+        size: Math.random() * 1.5 + 0.35,
+        baseAlpha: Math.random() * 0.75 + 0.25,
+        twinkleSpeed: Math.random() * 0.02 + 0.005,
+        twinklePhase: Math.random() * Math.PI * 2,
+        hue: Math.random() < 0.2 ? 210 : Math.random() < 0.1 ? 35 : 0
+      });
+    }
+  }
+  initStars();
+
+  // Cosmic Nebula Cloud Formations
+  const nebulae = [
+    { x: -spaceW * 0.3, y: -spaceH * 0.25, r: 520, color: "rgba(40, 20, 65, 0.22)" },
+    { x: spaceW * 0.35, y: spaceH * 0.3, r: 600, color: "rgba(18, 32, 65, 0.2)" },
+    { x: 0, y: -spaceH * 0.45, r: 420, color: "rgba(25, 40, 55, 0.18)" }
+  ];
+
+  // Parallax angles dynamically driven by Earth rotation in ALL directions
+  let spaceAngleX = 0;
+  let spaceAngleY = 0;
+
+  function renderSpace() {
+    sCtx.fillStyle = "#030407";
+    sCtx.fillRect(0, 0, spaceW, spaceH);
+
+    const centerX = spaceW / 2;
+    const centerY = spaceH / 2;
+
+    // Render distant space nebulae with parallax
+    nebulae.forEach(n => {
+      const nx = centerX + n.x + spaceAngleY * 90;
+      const ny = centerY + n.y - spaceAngleX * 90;
+      const grad = sCtx.createRadialGradient(nx, ny, 20, nx, ny, n.r);
+      grad.addColorStop(0, n.color);
+      grad.addColorStop(1, "transparent");
+      sCtx.fillStyle = grad;
+      sCtx.fillRect(nx - n.r, ny - n.r, n.r * 2, n.r * 2);
+    });
+
+    const time = performance.now() * 0.001;
+    const cosY = Math.cos(spaceAngleY * 0.35);
+    const sinY = Math.sin(spaceAngleY * 0.35);
+    const cosX = Math.cos(spaceAngleX * 0.35);
+    const sinX = Math.sin(spaceAngleX * 0.35);
+
+    for (let i = 0; i < stars.length; i++) {
+      const s = stars[i];
+
+      // 3D Parallax rotation
+      const x1 = s.x * cosY + s.z * sinY;
+      const z1 = -s.x * sinY + s.z * cosY;
+      const y2 = s.y * cosX - z1 * sinX;
+
+      const px = centerX + x1;
+      const py = centerY + y2;
+
+      if (px < -20 || px > spaceW + 20 || py < -20 || py > spaceH + 20) continue;
+
+      const twinkle = Math.sin(time * s.twinkleSpeed * 60 + s.twinklePhase) * 0.25;
+      const alpha = Math.max(0.1, Math.min(1, s.baseAlpha + twinkle));
+
+      sCtx.beginPath();
+      sCtx.arc(px, py, s.size, 0, Math.PI * 2);
+      if (s.hue === 210) {
+        sCtx.fillStyle = `rgba(180, 215, 255, ${alpha})`;
+      } else if (s.hue === 35) {
+        sCtx.fillStyle = `rgba(255, 220, 180, ${alpha})`;
+      } else {
+        sCtx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+      }
+      sCtx.fill();
+    }
+  }
+
+  // ========================================================================
+  // 2. Real Earth Globe (True 3D WebGL via Three.js with All-Angle Free Orbit)
+  // ========================================================================
+  const globeContainer = document.querySelector("#globeContainer");
+  const globeWrapper = document.querySelector("#globeTrigger");
+
+  // Three.js Scene Setup
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+  camera.position.z = 2.85;
+
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setSize(200, 200);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  globeContainer.appendChild(renderer.domElement);
+
+  // Sunlight (Illuminating upper-left like screenshot)
+  const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
+  sunLight.position.set(-2, 1.5, 2.5);
+  scene.add(sunLight);
+
+  // Ambient Light for subtle dark side visibility
+  const ambientLight = new THREE.AmbientLight(0x1a2638, 0.55);
+  scene.add(ambientLight);
+
+  // Generate Procedural High-Detail Earth Texture (Guaranteed Instant Fallback)
+  function createProceduralEarthCanvas() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 2048;
+    canvas.height = 1024;
+    const ctx = canvas.getContext("2d");
+
+    // Ocean deep blue
+    ctx.fillStyle = "#0c2b48";
+    ctx.fillRect(0, 0, 2048, 1024);
+
+    // Shelf waters
+    ctx.fillStyle = "#123c68";
+    ctx.beginPath();
+    ctx.ellipse(1460, 560, 340, 180, 0, 0, Math.PI * 2);
+    ctx.ellipse(560, 560, 260, 160, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    function drawPoly(coords, color) {
+      ctx.beginPath();
+      coords.forEach((pt, idx) => {
+        const x = (pt[0] / 360) * 2048;
+        const y = ((90 - pt[1]) / 180) * 1024;
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    // Eurasia & India
+    drawPoly([
+      [0, 50], [15, 58], [30, 70], [60, 75], [100, 78], [140, 72], [170, 66], [180, 64],
+      [170, 58], [140, 50], [130, 42], [120, 32], [110, 20], [105, 10], [100, 5],
+      [95, 15], [90, 22], [82, 8], [77, 8], [72, 22], [68, 25], [60, 25],
+      [55, 15], [45, 12], [42, 25], [35, 32], [28, 36], [24, 40], [15, 42], [0, 48]
+    ], "#315933");
+
+    // Himalayas / Tibetan Plateau
+    drawPoly([[68, 36], [82, 38], [95, 35], [102, 30], [92, 26], [78, 28], [70, 30]], "#7d704d");
+
+    // Middle East & North African Desert
+    drawPoly([[35, 32], [45, 35], [55, 30], [60, 25], [55, 15], [45, 12], [42, 25], [32, 28]], "#a68d59");
+    drawPoly([
+      [-16, 32], [0, 36], [15, 36], [32, 32], [35, 24], [44, 12], [50, 10],
+      [42, 2], [32, 4], [25, -5], [10, 4], [-12, 6], [-16, 20]
+    ], "#b39962");
+
+    // Sub-Saharan Africa
+    drawPoly([
+      [-16, 12], [10, 4], [25, -5], [38, 2], [42, -10], [38, -20], [30, -32],
+      [20, -34], [16, -30], [12, -15], [8, 4], [-12, 6]
+    ], "#2c542b");
+
+    // Australia
+    drawPoly([
+      [114, -22], [124, -15], [136, -12], [142, -10], [148, -20], [152, -28],
+      [148, -38], [138, -36], [130, -32], [116, -34], [114, -26]
+    ], "#9c603a");
+
+    // North & South Americas
+    drawPoly([
+      [-168, 65], [-140, 70], [-100, 72], [-80, 74], [-60, 60], [-65, 45],
+      [-75, 35], [-80, 26], [-90, 20], [-100, 20], [-105, 24], [-115, 30],
+      [-124, 38], [-126, 48], [-135, 56], [-150, 60], [-168, 65]
+    ], "#385b35");
+
+    drawPoly([
+      [-76, 8], [-60, 10], [-48, -2], [-35, -6], [-38, -15], [-44, -24],
+      [-55, -35], [-66, -54], [-74, -48], [-72, -35], [-70, -20], [-80, -4]
+    ], "#244d24");
+
+    // Antarctica & Polar Ice
+    ctx.fillStyle = "#e8f2f8";
+    ctx.fillRect(0, 960, 2048, 64);
+    ctx.fillRect(0, 0, 2048, 42);
+
+    // Cloud Swirls
+    ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+    for (let c = 0; c < 36; c++) {
+      const cx = (c * 68) % 2048;
+      const cy = 350 + Math.sin(c * 1.4) * 180;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 140, 28, Math.sin(c) * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    return canvas;
+  }
+
+  // Create Base Procedural Texture
+  const proceduralCanvas = createProceduralEarthCanvas();
+  const earthTexture = new THREE.CanvasTexture(proceduralCanvas);
+
+  // Attempt to upgrade to high-resolution NASA satellite texture map
+  const textureLoader = new THREE.TextureLoader();
+  textureLoader.crossOrigin = "anonymous";
+  textureLoader.load(
+    "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_atmos_2048.jpg",
+    (tex) => {
+      earthMaterial.map = tex;
+      earthMaterial.needsUpdate = true;
+    },
+    undefined,
+    () => { /* Keeps high-detail procedural canvas on network restriction */ }
+  );
+
+  // Earth Sphere
+  const earthGeometry = new THREE.SphereGeometry(1, 64, 64);
+  const earthMaterial = new THREE.MeshPhongMaterial({
+    map: earthTexture,
+    specular: new THREE.Color(0x223344),
+    shininess: 12
+  });
+  const earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
+  scene.add(earthMesh);
+
+  // Atmosphere Glow Shader (Soft blue luminous rim matching reference image)
+  const atmosphereVertexShader = `
+    varying vec3 vNormal;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+  const atmosphereFragmentShader = `
+    varying vec3 vNormal;
+    void main() {
+      float intensity = pow(0.68 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.2);
+      gl_FragColor = vec4(0.2, 0.58, 1.0, 1.0) * intensity * 1.5;
+    }
+  `;
+  const atmosphereMaterial = new THREE.ShaderMaterial({
+    vertexShader: atmosphereVertexShader,
+    fragmentShader: atmosphereFragmentShader,
+    blending: THREE.AdditiveBlending,
+    side: THREE.BackSide,
+    transparent: true
+  });
+  const atmosphereMesh = new THREE.Mesh(new THREE.SphereGeometry(1.16, 64, 64), atmosphereMaterial);
+  scene.add(atmosphereMesh);
+
+  // Initial Orientation: Centered on Eurasia / India like uploaded screenshot
+  earthMesh.rotation.y = 1.35;
+  earthMesh.rotation.x = 0.35;
+
+  // Trackball / Quaternion Orbiting in ALL 360° Angles (Pitch, Yaw, Roll)
+  let isDragging = false;
+  let prevMouseX = 0;
+  let prevMouseY = 0;
+  let velocityX = 0;
+  let velocityY = 0;
+
+  function onPointerDown(e) {
+    isDragging = true;
+    prevMouseX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+    prevMouseY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+    velocityX = 0;
+    velocityY = 0;
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+
+    const deltaX = clientX - prevMouseX;
+    const deltaY = clientY - prevMouseY;
+
+    velocityX = deltaX * 0.005;
+    velocityY = deltaY * 0.005;
+
+    // Quaternion multiplication enables true spherical rotation in all angles without gimbal lock
+    const deltaRotationQuaternion = new THREE.Quaternion()
+      .setFromEuler(new THREE.Euler(
+        velocityY,
+        velocityX,
+        0,
+        'XYZ'
+      ));
+
+    earthMesh.quaternion.multiplyQuaternions(deltaRotationQuaternion, earthMesh.quaternion);
+
+    // Parallax rotate the outer space starfield in sync with user rotation
+    spaceAngleY += velocityX * 0.6;
+    spaceAngleX -= velocityY * 0.6;
+
+    prevMouseX = clientX;
+    prevMouseY = clientY;
+  }
+
+  function onPointerUp() {
+    isDragging = false;
+  }
+
+  globeWrapper.addEventListener("pointerdown", onPointerDown);
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+
+  // Main Render Loop: "rotate ONLY when user rotates"
+  function animate() {
+    renderSpace();
+
+    // Inertial deceleration: decays to complete standstill
+    if (!isDragging) {
+      if (Math.abs(velocityX) > 0.00008 || Math.abs(velocityY) > 0.00008) {
+        const deltaRotationQuaternion = new THREE.Quaternion()
+          .setFromEuler(new THREE.Euler(
+            velocityY,
+            velocityX,
+            0,
+            'XYZ'
+          ));
+        earthMesh.quaternion.multiplyQuaternions(deltaRotationQuaternion, earthMesh.quaternion);
+
+        spaceAngleY += velocityX * 0.6;
+        spaceAngleX -= velocityY * 0.6;
+
+        velocityX *= 0.93;
+        velocityY *= 0.93;
+      } else {
+        velocityX = 0;
+        velocityY = 0;
+      }
+    }
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+  animate();
+
+  // ========================================================================
+  // 3. Application State & Sidebar Management (Always Restorable)
+  // ========================================================================
   const form = document.querySelector("#chatForm");
   const input = document.querySelector("#messageInput");
   const send = document.querySelector("#send");
@@ -1198,110 +1528,39 @@ button:active {
   const sidebarSettingsBtn = document.querySelector("#sidebarSettingsBtn");
   const topbarModelBadge = document.querySelector("#topbarModelBadge");
   const currentModelDisplay = document.querySelector("#currentModelDisplay");
+  const modelInfoText = document.querySelector("#modelInfoText");
   const closeSettingsBtn = document.querySelector("#closeSettings");
   const settingsDrawer = document.querySelector("#settingsDrawer");
   const drawerOverlay = document.querySelector("#drawerOverlay");
   const activeThreadTitle = document.querySelector("#activeThreadTitle");
   const appSidebar = document.querySelector("#appSidebar");
-  const mobileMenuBtn = document.querySelector("#mobileMenuBtn");
-  const closeSidebarMobile = document.querySelector("#closeSidebarMobile");
+  const sidebarToggleBtn = document.querySelector("#sidebarToggleBtn");
+  const collapseSidebarBtn = document.querySelector("#collapseSidebarBtn");
   const sidebarOverlay = document.querySelector("#sidebarOverlay");
-  const topThemeToggle = document.querySelector("#topThemeToggle");
-  const sidebarThemeToggle = document.querySelector("#sidebarThemeToggle");
 
-  // ========================================================================
-  // Theme Management (Light / Dark with System Sync & Storage)
-  // ========================================================================
-  const THEME_KEY = "braincellgpt_theme_preference";
-
-  function getPreferredTheme() {
-    const saved = localStorage.getItem(THEME_KEY);
-    if (saved === "light" || saved === "dark") return saved;
-    return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  }
-
-  function applyTheme(theme) {
-    document.documentElement.setAttribute("data-theme", theme);
-    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-    if (metaThemeColor) {
-      metaThemeColor.setAttribute("content", theme === "light" ? "#F9F9F6" : "#0D0E11");
+  // Cohesive Sidebar Toggle Logic: Works for collapse & restore on desktop + mobile
+  function toggleSidebar() {
+    if (window.innerWidth <= 768) {
+      appSidebar.classList.toggle("mobile-open");
+      sidebarOverlay.classList.toggle("open");
+    } else {
+      appSidebar.classList.toggle("collapsed");
     }
-
-    // Update icons on both toggle buttons
-    [topThemeToggle, sidebarThemeToggle].forEach(btn => {
-      if (!btn) return;
-      const sun = btn.querySelector(".theme-icon-sun");
-      const moon = btn.querySelector(".theme-icon-moon");
-      if (theme === "light") {
-        if (sun) sun.style.display = "none";
-        if (moon) moon.style.display = "block";
-        btn.setAttribute("aria-label", "Switch to dark theme");
-      } else {
-        if (sun) sun.style.display = "block";
-        if (moon) moon.style.display = "none";
-        btn.setAttribute("aria-label", "Switch to light theme");
-      }
-    });
   }
 
-  function toggleTheme() {
-    const current = document.documentElement.getAttribute("data-theme") || "dark";
-    const next = current === "light" ? "dark" : "light";
-    localStorage.setItem(THEME_KEY, next);
-    applyTheme(next);
-  }
+  sidebarToggleBtn.addEventListener("click", toggleSidebar);
+  collapseSidebarBtn.addEventListener("click", toggleSidebar);
+  sidebarOverlay.addEventListener("click", toggleSidebar);
 
-  [topThemeToggle, sidebarThemeToggle].forEach(btn => {
-    if (btn) btn.addEventListener("click", toggleTheme);
-  });
-
-  // Initialize theme
-  applyTheme(getPreferredTheme());
-
-  // Listen for system OS scheme changes if user hasn't explicitly overridden
-  if (window.matchMedia) {
-    window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", e => {
-      if (!localStorage.getItem(THEME_KEY)) {
-        applyTheme(e.matches ? "light" : "dark");
-      }
-    });
-  }
-
-  // ========================================================================
-  // Responsive Mobile Sidebar Navigation
-  // ========================================================================
-  function openMobileSidebar() {
-    appSidebar.classList.add("mobile-open");
-    sidebarOverlay.classList.add("open");
-    sidebarOverlay.setAttribute("aria-hidden", "false");
-  }
-
-  function closeMobileSidebar() {
-    appSidebar.classList.remove("mobile-open");
-    sidebarOverlay.classList.remove("open");
-    sidebarOverlay.setAttribute("aria-hidden", "true");
-  }
-
-  if (mobileMenuBtn) mobileMenuBtn.addEventListener("click", openMobileSidebar);
-  if (closeSidebarMobile) closeSidebarMobile.addEventListener("click", closeMobileSidebar);
-  if (sidebarOverlay) sidebarOverlay.addEventListener("click", closeMobileSidebar);
-
-  // ========================================================================
-  // Settings Drawer Controls
-  // ========================================================================
+  // Drawer Controls
   function openDrawer() {
     settingsDrawer.classList.add("open");
     drawerOverlay.classList.add("open");
-    settingsDrawer.setAttribute("aria-hidden", "false");
-    drawerOverlay.setAttribute("aria-hidden", "false");
-    if (window.innerWidth <= 768) closeMobileSidebar();
   }
 
   function closeDrawer() {
     settingsDrawer.classList.remove("open");
     drawerOverlay.classList.remove("open");
-    settingsDrawer.setAttribute("aria-hidden", "true");
-    drawerOverlay.setAttribute("aria-hidden", "true");
   }
 
   [openSettingsTop, sidebarSettingsBtn, topbarModelBadge].forEach(btn => {
@@ -1311,61 +1570,32 @@ button:active {
   if (drawerOverlay) drawerOverlay.addEventListener("click", closeDrawer);
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      if (settingsDrawer.classList.contains("open")) closeDrawer();
-      if (appSidebar.classList.contains("mobile-open")) closeMobileSidebar();
+      closeDrawer();
+      if (appSidebar.classList.contains("mobile-open")) toggleSidebar();
     }
   });
 
-  // ========================================================================
-  // Profile & Provider State Management
-  // ========================================================================
+  // Profile Management
   const profileStoreKey = "braincellgpt_profiles_v1";
   const supportedProviders = new Set([...providerSelect.options].map(option => option.value));
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/-/g, "");
-  let legacyKeys = {};
-  try { legacyKeys = JSON.parse(sessionStorage.getItem("braincellgpt_provider_keys") || "{}"); } catch { legacyKeys = {}; }
   let profiles;
   try { profiles = JSON.parse(sessionStorage.getItem(profileStoreKey) || "[]"); } catch { profiles = []; }
   if (!Array.isArray(profiles)) profiles = [];
   profiles = profiles.filter(p => p && typeof p.id === "string" && typeof p.provider === "string" && supportedProviders.has(p.provider));
   if (!profiles.length) {
     const legacyProvider = sessionStorage.getItem("braincellgpt_provider") || "groq";
-    profiles = [{ id: newId(), name: legacyProvider, provider: legacyProvider, model: sessionStorage.getItem("braincellgpt_model") || "", baseUrl: sessionStorage.getItem("braincellgpt_base_url") || "" }];
+    profiles = [{ id: newId(), name: legacyProvider, provider: legacyProvider, model: "", baseUrl: "" }];
   }
-  const legacyMigrations = [];
-  Object.entries(legacyKeys).forEach(([provider, key]) => {
-    if (typeof key !== "string" || !key.trim()) return;
-    let profile = profiles.find(item => item.provider === provider && !legacyMigrations.some(entry => entry.profileId === item.id));
-    if (!profile) {
-      profile = { id: newId(), name: provider, provider, model: "", baseUrl: "" };
-      profiles.push(profile);
-    }
-    legacyMigrations.push({ profileId: profile.id, key: key.trim() });
-  });
   let activeProfileId = sessionStorage.getItem("braincellgpt_active_profile") || profiles[0].id;
   if (!profiles.some(p => p.id === activeProfileId)) activeProfileId = profiles[0].id;
   const activeProfile = () => profiles.find(p => p.id === activeProfileId);
+
   function persistProfiles() {
     sessionStorage.setItem(profileStoreKey, JSON.stringify(profiles));
     sessionStorage.setItem("braincellgpt_active_profile", activeProfileId);
   }
-  async function migrateLegacyKeys() {
-    try {
-      for (const entry of legacyMigrations) {
-        const response = await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: entry.profileId, api_key: entry.key }) });
-        if (!response.ok) throw new Error("Legacy key migration failed.");
-      }
-      sessionStorage.removeItem("braincellgpt_provider_keys");
-      sessionStorage.removeItem("braincellgpt_provider");
-      sessionStorage.removeItem("braincellgpt_model");
-      sessionStorage.removeItem("braincellgpt_base_url");
-      persistProfiles();
-      await refreshKeyStatus();
-    } catch {
-      apiKeyStatus.dataset.state = "error";
-      apiKeyStatus.textContent = "An older tab key could not be moved to app memory. Keep this tab open and retry.";
-    }
-  }
+
   function renderProfileOptions() {
     profileSelect.replaceChildren(...profiles.map(profile => {
       const option = document.createElement("option");
@@ -1376,23 +1606,33 @@ button:active {
     profileSelect.value = activeProfileId;
     document.querySelector("#deleteProfile").disabled = profiles.length <= 1;
   }
+
   async function refreshKeyStatus() {
     apiKeyInput.value = "";
     apiKeyStatus.dataset.state = "";
     if (["ollama", "lmstudio"].includes(activeProfile().provider)) {
-      apiKeyStatus.textContent = activeProfile().provider === "ollama" ? "Ollama local server. Default: http://localhost:11434/v1" : "LM Studio local server. Default: http://localhost:1234/v1";
+      apiKeyStatus.textContent = activeProfile().provider === "ollama" ? "Ollama local server." : "LM Studio local server.";
       return;
     }
     try {
       const response = await fetch(`/api/profile-secret-status?id=${encodeURIComponent(activeProfileId)}`);
       const data = await response.json();
       apiKeyStatus.textContent = data.configured
-        ? "A key is saved in this app's memory. It is cleared when the server stops."
-        : "No profile key saved. The matching server .env key can be used if configured.";
+        ? "A key is saved in server memory."
+        : "No profile key saved. Local .env key will be used if configured.";
     } catch {
-      apiKeyStatus.textContent = "Key status unavailable. The matching server .env key can still be used.";
+      apiKeyStatus.textContent = "Key status unavailable.";
     }
   }
+
+  function updateModelBadge() {
+    const providerLabel = providerSelect.options[providerSelect.selectedIndex]?.text.split(" ")[0] || "Groq";
+    const customModel = modelNameInput.value.trim();
+    const display = customModel ? `${providerLabel} · ${customModel}` : `${providerLabel} · Llama 3.3`;
+    currentModelDisplay.textContent = display;
+    if (modelInfoText) modelInfoText.textContent = customModel || "Llama 3.3";
+  }
+
   function loadActiveProfile() {
     const profile = activeProfile();
     profileNameInput.value = profile.name || "";
@@ -1400,75 +1640,52 @@ button:active {
     modelNameInput.value = profile.model || "";
     baseUrlInput.value = profile.baseUrl || "";
     renderProfileOptions();
-    updateProviderFields();
+    updateModelBadge();
     refreshKeyStatus();
   }
+
   persistProfiles();
   loadActiveProfile();
-  let keyMigration = Promise.resolve();
-  if (legacyMigrations.length) keyMigration = migrateLegacyKeys();
-
-  function updateModelBadge() {
-    const providerLabel = providerSelect.options[providerSelect.selectedIndex]?.text.split(" ")[0] || "Groq";
-    const customModel = modelNameInput.value.trim();
-    if (customModel) {
-      currentModelDisplay.textContent = `${providerLabel} · ${customModel}`;
-    } else {
-      currentModelDisplay.textContent = `${providerLabel} · Active`;
-    }
-  }
-
-  function updateProviderFields() {
-    const provider = providerSelect.value;
-    document.querySelector("#customFields").hidden = !["custom", "ollama", "lmstudio"].includes(provider);
-    document.querySelector("#baseUrlLabel").textContent = provider === "ollama" ? "Ollama Endpoint URL" : "Custom Base URL";
-    baseUrlInput.placeholder = provider === "ollama" ? "http://localhost:11434/v1" : provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.example.com/v1";
-    modelNameInput.placeholder = provider === "ollama" ? "e.g. llama3.2" : provider === "lmstudio" ? "Model ID in LM Studio" : "Default model or enter model ID";
-    apiKeyInput.placeholder = ["ollama", "lmstudio"].includes(provider) ? "Not needed for local models" : "Enter a new API key to save or verify";
-    if (["ollama", "lmstudio"].includes(provider)) apiKeyStatus.textContent = provider === "ollama" ? "Ollama local server. Default: http://localhost:11434/v1" : "LM Studio local server. Default: http://localhost:1234/v1";
-    updateModelBadge();
-  }
 
   providerSelect.addEventListener("change", () => {
     activeProfile().provider = providerSelect.value;
     activeProfile().name = providerSelect.options[providerSelect.selectedIndex].text.split(" (")[0];
     persistProfiles();
     renderProfileOptions();
-    updateProviderFields();
+    updateModelBadge();
     refreshKeyStatus();
   });
+
   profileSelect.addEventListener("change", () => {
     activeProfileId = profileSelect.value;
     persistProfiles();
     loadActiveProfile();
   });
+
   document.querySelector("#addProfile").addEventListener("click", () => {
     const profile = { id: newId(), name: "New profile", provider: providerSelect.value, model: "", baseUrl: "" };
     profiles.push(profile);
     activeProfileId = profile.id;
     persistProfiles();
     loadActiveProfile();
-    apiKeyStatus.textContent = "Choose a provider and add a key for this profile.";
   });
+
   profileNameInput.addEventListener("input", () => {
-    const name = profileNameInput.value.trim().slice(0, 64);
-    activeProfile().name = name || "Untitled profile";
+    activeProfile().name = profileNameInput.value.trim().slice(0, 64) || "Untitled";
     persistProfiles();
     renderProfileOptions();
   });
+
   document.querySelector("#deleteProfile").addEventListener("click", async () => {
     if (profiles.length <= 1) return;
-    const response = await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: "" }) });
-    if (!response.ok) { apiKeyStatus.dataset.state = "error"; apiKeyStatus.textContent = "Could not delete this profile's saved key."; return; }
+    await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: "" }) });
     profiles = profiles.filter(profile => profile.id !== activeProfileId);
     activeProfileId = profiles[0].id;
     persistProfiles();
     loadActiveProfile();
   });
 
-  // ========================================================================
-  // Messaging & Chat Lifecycle
-  // ========================================================================
+  // Chat Execution
   let history = [];
   let busy = false;
 
@@ -1478,27 +1695,24 @@ button:active {
     row.className = `chat-turn ${role}`;
 
     if (role === "user") {
-      row.innerHTML = `
-        <div class="user-message-panel">${escapeHtml(content)}</div>
-      `;
+      row.innerHTML = `<div class="user-message-panel">${escapeHtml(content)}</div>`;
     } else {
       row.innerHTML = `
         <div class="assistant-message-panel">
           <div class="assistant-body"><p>${escapeHtml(content)}</p></div>
           <div class="message-meta-row">
-            <button class="btn-action-text copy-btn" aria-label="Copy response text">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <button class="btn-action-text copy-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
               <span>Copy</span>
             </button>
           </div>
         </div>
       `;
-
       row.querySelector(".copy-btn")?.addEventListener("click", function() {
         navigator.clipboard.writeText(content);
-        const span = this.querySelector("span");
-        if (span) span.textContent = "Copied";
-        setTimeout(() => { if (span) span.textContent = "Copy"; }, 1500);
+        const s = this.querySelector("span");
+        if (s) s.textContent = "Copied";
+        setTimeout(() => { if (s) s.textContent = "Copy"; }, 1500);
       });
     }
 
@@ -1513,8 +1727,8 @@ button:active {
   }
 
   function adjustTextareaHeight() {
-    input.style.height = "24px";
-    input.style.height = Math.min(input.scrollHeight, 180) + "px";
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 200) + "px";
   }
 
   input.addEventListener("input", adjustTextareaHeight);
@@ -1529,7 +1743,7 @@ button:active {
     errorEl.hidden = true;
 
     if (history.length === 0) {
-      activeThreadTitle.textContent = text.length > 22 ? text.substring(0, 22) + "..." : text;
+      activeThreadTitle.textContent = text.length > 25 ? text.substring(0, 25) + "..." : text;
     }
 
     renderMessage("user", text);
@@ -1539,18 +1753,15 @@ button:active {
     const thinkingRow = document.createElement("div");
     thinkingRow.className = "chat-turn assistant";
     thinkingRow.innerHTML = `
-      <div class="assistant-message-panel">
-        <span class="thinking-notice">
-          <span class="thinking-dot"></span>
-          <span>Thinking...</span>
-        </span>
+      <div class="thinking-notice">
+        <span class="thinking-dot"></span>
+        <span>BrainCell thinking...</span>
       </div>
     `;
     messagesEl.appendChild(thinkingRow);
     thinkingRow.scrollIntoView({ behavior: "smooth", block: "end" });
 
     try {
-      await keyMigration;
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1564,7 +1775,7 @@ button:active {
         })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Request failed. Try again.");
+      if (!response.ok) throw new Error(data.error || "Request failed.");
       history.push({ role: "assistant", content: data.reply });
       thinkingRow.remove();
       renderMessage("assistant", data.reply);
@@ -1572,7 +1783,6 @@ button:active {
       thinkingRow.remove();
       errorEl.hidden = false;
       errorMessage.textContent = err instanceof Error ? err.message : "Something went wrong.";
-      errorEl.scrollIntoView({ behavior: "smooth", block: "end" });
     } finally {
       busy = false;
       send.disabled = false;
@@ -1586,9 +1796,8 @@ button:active {
     btn.disabled = true;
     btn.textContent = "Checking...";
     apiKeyStatus.dataset.state = "checking";
-    apiKeyStatus.textContent = "Contacting provider...";
+    apiKeyStatus.textContent = "Testing connection...";
     try {
-      await keyMigration;
       const response = await fetch("/api/test-connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1608,33 +1817,29 @@ button:active {
       apiKeyStatus.dataset.state = "error";
       apiKeyStatus.textContent = err instanceof Error ? err.message : "Connection failed.";
     } finally {
-      apiKeyInput.value = "";
       btn.disabled = false;
       btn.textContent = "Verify";
     }
   });
 
-  // Save / Clear keys
+  // Save / Clear API key
   document.querySelector("#saveApiKey").addEventListener("click", () => {
     const key = apiKeyInput.value.trim();
-    if (!key) { apiKeyStatus.textContent = "Enter a key first. Use Clear to remove the saved key."; return; }
+    if (!key) return;
     fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: key }) })
-      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Could not save key."); apiKeyInput.value = ""; apiKeyStatus.dataset.state = "success"; apiKeyStatus.textContent = "Key saved in app memory. It is cleared when the server stops."; })
-      .catch(error => { apiKeyStatus.dataset.state = "error"; apiKeyStatus.textContent = error.message; });
+      .then(async r => { if (!r.ok) throw new Error(); apiKeyInput.value = ""; apiKeyStatus.dataset.state = "success"; apiKeyStatus.textContent = "Key saved in memory."; })
+      .catch(() => { apiKeyStatus.dataset.state = "error"; apiKeyStatus.textContent = "Could not save key."; });
   });
 
   document.querySelector("#clearApiKey").addEventListener("click", async () => {
     apiKeyInput.value = "";
-    try {
-      const response = await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: "" }) });
-      if (!response.ok) throw new Error("Could not clear key.");
-      apiKeyStatus.dataset.state = "";
-      apiKeyStatus.textContent = "Profile key cleared. The matching server .env key can still be used.";
-    } catch (error) { apiKeyStatus.dataset.state = "error"; apiKeyStatus.textContent = error.message; }
+    await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: "" }) });
+    apiKeyStatus.dataset.state = "";
+    apiKeyStatus.textContent = "Key cleared.";
   });
 
-  [baseUrlInput, modelNameInput].forEach(field => {
-    if (field) field.addEventListener("input", () => {
+  [baseUrlInput, modelNameInput].forEach(f => {
+    if (f) f.addEventListener("input", () => {
       activeProfile().baseUrl = baseUrlInput.value.trim();
       activeProfile().model = modelNameInput.value.trim();
       persistProfiles();
@@ -1642,14 +1847,14 @@ button:active {
     });
   });
 
-  form.addEventListener("submit", event => {
-    event.preventDefault();
+  form.addEventListener("submit", e => {
+    e.preventDefault();
     sendMessage(input.value);
   });
 
-  input.addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
       form.requestSubmit();
     }
   });
@@ -1658,18 +1863,9 @@ button:active {
     history = [];
     messagesEl.replaceChildren();
     errorEl.hidden = true;
-    welcome.style.display = "block";
-    activeThreadTitle.textContent = "Current session";
-    if (window.innerWidth <= 768) closeMobileSidebar();
+    welcome.style.display = "flex";
+    activeThreadTitle.textContent = "Current Session";
     input.focus();
-  });
-
-  document.querySelectorAll("[data-prompt]").forEach(card => {
-    card.addEventListener("click", () => {
-      input.value = card.dataset.prompt;
-      adjustTextareaHeight();
-      input.focus();
-    });
   });
 })();
 </script>
