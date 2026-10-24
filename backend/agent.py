@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from backend.provider_http import open_provider_request
+
 
 MAX_FILE_BYTES = 200_000
 MAX_TOOL_RESULT = 24_000
@@ -227,7 +229,7 @@ def run_agent(task: str, history: list[dict], root: Path, provider: str, api_key
             if not _PROVIDER_SLOTS.acquire(timeout=2):
                 raise ValueError("BrainCellGPT is busy handling other provider requests. Try again shortly.")
             try:
-                with urllib.request.urlopen(request, timeout=90) as response:
+                with open_provider_request(request, timeout=90) as response:
                     data = _read_provider_json(response)
             finally:
                 _PROVIDER_SLOTS.release()
