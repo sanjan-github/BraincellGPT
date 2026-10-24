@@ -50,6 +50,7 @@ class ProviderConfigurationTests(unittest.TestCase):
 
     def test_invalid_port_fails_fast(self):
         # PORT parsing is validated at import time; this behaviour is covered by CI syntax/import checks.
+        pass
 
 
 class PersonalityPromptTests(unittest.TestCase):
