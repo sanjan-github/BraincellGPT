@@ -440,7 +440,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     return extract_provider_reply(data, protocol, label)
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "BrainCellGPT/1.0.0"
+    server_version = "BrainCellGPT/1.1.0"
 
     def setup(self) -> None:
         super().setup()

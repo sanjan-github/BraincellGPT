@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.0] - 2026-10-25
+
+### Added
+- Dedicated Introduction & Purpose documentation outlining BrainCellGPT's comedic identity.
+- Redesigned, professional, and accessible open-source project documentation.
+
+### Changed
+- Refactored project README to adhere to modern industry documentation standards.
+- Bumped application and HTTP provider user-agent versions to 1.1.0.
+
+### Fixed
+- Fixed 3D WebGL globe inverted latitude mapping and orientation.
+- Improved top navigation bar layer order and clickability over the 3D globe visualization.
+- Fixed error dialog visibility state handling and settings drawer option styling.
+- Corrected message quota accounting to guarantee full 10-message conversational access.
+
 ## [1.0.0] - 2026-10-25
 
 BrainCellGPT 1.0 centers the application on its original purpose: humorous, entertaining chat.
