@@ -2,10 +2,11 @@
 
 ## Current state
 
-- Status: IN PROGRESS. Local implementation is verified; the first fresh CI run found a quota error-precedence bug that is fixed locally and awaiting rerun. Browser interaction remains unverified.
-- Branch: `main`. Baseline SHA: `b409b646bbee746ad1185972f45b34a8e3bf924e`. Initial worktree was clean. Implementation commit: `2ae55e9c3fea2e0ba757b543c91e0a026eee0734`, pushed to origin/main. A targeted CI fix is now uncommitted.
+- Status: VERIFIED for the committed backend and UI changes. Browser interaction and live provider integrations remain unverified as described below.
+- Branch: `main`. Baseline SHA: `b409b646bbee746ad1185972f45b34a8e3bf924e`. Initial worktree was clean. Application code commit: `0044ecd07057c096ee26e1cffc511b071b6647ed`, pushed to origin/main.
 - Latest baseline CI: [run 40185691493](https://github.com/sanjan-github/BraincellGPT/actions/runs/40185691493) for the baseline SHA; six Ubuntu/Windows/macOS application jobs passed on Python 3.11 and 3.12. Opt-in live provider/MCP/OAuth checks were skipped.
-- Fresh CI: [run 40188928189](https://github.com/sanjan-github/BraincellGPT/actions/runs/40188928189) for implementation commit `2ae55e9c3fea2e0ba757b543c91e0a026eee0734`; all six application jobs failed in the unit-test step for the same quota error-ordering issue recorded below. Rerun is pending.
+- First fresh CI: [run 40188928189](https://github.com/sanjan-github/BraincellGPT/actions/runs/40188928189) for commit `2ae55e9c3fea2e0ba757b543c91e0a026eee0734`; all six jobs exposed CHAT-LIMIT-002.
+- Corrected commit CI: [run 40189104800](https://github.com/sanjan-github/BraincellGPT/actions/runs/40189104800) for `0044ecd07057c096ee26e1cffc511b071b6647ed`; all six application jobs passed, including syntax, UI presence, unit/security/native credential-store tests, tracked-file secret scan, and clean-install HTTP smoke. The opt-in live integration job was skipped.
 - Browser: Brave blocked the existing localhost page and an isolated server on port 8011 with `net::ERR_BLOCKED_BY_CLIENT`. The isolated server used a temporary data directory and was stopped. Browser interaction and visual behavior remain UNVERIFIED.
 
 ## Defects and changes
@@ -50,7 +51,7 @@
 - Root cause: `generate_reply` checked the provider key before calling its request-start callback. CI has no Groq key, so the exhausted request returned 502 before quota enforcement.
 - Fix: check the authoritative exhausted count before credential validation, while retaining atomic reservation at provider start for concurrent requests.
 - Regression: the request-security test explicitly clears `GROQ_API_KEY`, expects HTTP 429, and confirms the provider is not called.
-- Verification: focused API/store tests pass; Pyright and compileall pass. Fresh CI rerun remains pending.
+- Verification: focused API/store tests, full suites, Pyright, compileall, and all six corrected CI application jobs pass.
 
 ## Verification for implementation commit
 
@@ -62,7 +63,7 @@
 - Node `--check` on the inline script extracted from `web/index.html` - passed.
 - CI secret scan pattern via `git grep` - no tracked-file matches.
 - `git diff --check` - passed.
-- Fresh CI run `40188928189` - failed on all six application jobs due to CHAT-LIMIT-002; fixed locally and rerun pending.
+- Fresh CI run `40189104800` - all six application jobs passed for application commit `0044ecd07057c096ee26e1cffc511b071b6647ed`; live provider/MCP/OAuth job skipped as opt-in.
 - Browser flow - NOT VERIFIED; Brave returned `net::ERR_BLOCKED_BY_CLIENT` for localhost.
 - Live provider/key verification - NOT RUN; provider requests are mocked in standard tests. Live MCP and OAuth checks are opt-in and were skipped.
 
@@ -71,4 +72,4 @@
 - Shared usage is installation-local, not authenticated per user. A user can bypass it by creating another installation or changing local state; it does not protect a public anonymous shared-key deployment.
 - Own keys use the existing bounded server-memory cache, expire after 24 hours, and are cleared on server stop. Users must enter them again after restart.
 - Browser IndexedDB history is device/browser-specific, may be removed by clearing browser data, and does not sync across devices.
-- Next action: commit and push CHAT-LIMIT-002, inspect all six CI jobs on the rerun, then update this checkpoint with the result.
+- Next action: NOT APPLICABLE for implementation. Retry browser verification only if Brave permits localhost; live integrations remain optional and unverified.
