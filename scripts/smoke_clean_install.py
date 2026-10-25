@@ -21,7 +21,12 @@ def main() -> int:
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
-        process_env = dict(os.environ, PORT=str(port), BRAINCELLGPT_HOST="127.0.0.1")
+        process_env = dict(
+            os.environ,
+            PORT=str(port),
+            BRAINCELLGPT_HOST="127.0.0.1",
+            BRAINCELLGPT_DATA_DIR=str(Path(directory) / "data"),
+        )
         for key in list(process_env):
             if key.endswith("_API_KEY") or key == "CUSTOM_API_KEY":
                 process_env.pop(key, None)
@@ -50,16 +55,31 @@ def main() -> int:
             with urllib.request.urlopen(base + "/", timeout=3) as response:
                 if response.status != 200 or b"BraincellGPT" not in response.read():
                     raise RuntimeError("The application page failed its clean-install smoke check.")
+            create_request = urllib.request.Request(
+                base + "/api/conversations", data=b"{}", headers={"Content-Type": "application/json"}, method="POST",
+            )
+            with urllib.request.urlopen(create_request, timeout=3) as response:
+                if response.status != 201:
+                    raise RuntimeError("Conversation creation did not return 201.")
+                import json
+                conversation = json.loads(response.read().decode("utf-8"))
+            if conversation.get("messages_used") != 0 or conversation.get("message_limit") != 10:
+                raise RuntimeError("New conversation did not start with a 10-message allowance.")
+            usage_request = urllib.request.Request(base + "/api/conversations/usage?id=" + conversation["conversation_id"])
+            with urllib.request.urlopen(usage_request, timeout=3) as response:
+                usage = json.loads(response.read().decode("utf-8"))
+            if usage.get("messages_used") != 0:
+                raise RuntimeError("Conversation usage did not persist through the HTTP API.")
             request = urllib.request.Request(
-                base + "/api/chat", data=b"{}", headers={"Content-Type": "application/json"}, method="POST",
+                base + "/api/chat", data=b'{"message":"","conversation_id":"' + conversation["conversation_id"].encode("ascii") + b'","request_id":"' + b"a" * 32 + b'"}', headers={"Content-Type": "application/json"}, method="POST",
             )
             try:
                 urllib.request.urlopen(request, timeout=3)
             except urllib.error.HTTPError as response:
                 if response.code != 400:
-                    raise RuntimeError(f"Malformed chat request returned {response.code}, expected 400.")
+                    raise RuntimeError(f"Empty chat request returned {response.code}, expected 400.")
             else:
-                raise RuntimeError("Malformed chat request unexpectedly succeeded.")
+                raise RuntimeError("Empty chat request unexpectedly succeeded.")
             print("Clean virtual-environment startup and HTTP smoke checks passed.")
             return 0
         finally:

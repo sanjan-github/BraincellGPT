@@ -1,4 +1,5 @@
 import email.message
+import http.client
 import io
 import json
 import os
@@ -6,7 +7,7 @@ import subprocess
 import sys
 import unittest
 import urllib.error
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import app
 
@@ -166,6 +167,14 @@ class PersonalityPromptTests(unittest.TestCase):
         self.assertIn("do not overexplain jokes", prompt.lower())
         self.assertIn("sarcastic", prompt.lower())
 
+    def test_prompt_requests_natural_brief_responses_without_forced_jokes(self):
+        prompt = app.build_system_prompt("normal").lower()
+        self.assertIn("natural, native-speaking person", prompt)
+        self.assertIn("usually one to four sentences", prompt)
+        self.assertIn("do not repeatedly use nicknames", prompt)
+        self.assertIn("give a detailed answer when the user asks", prompt)
+        self.assertIn("do not force a joke", prompt)
+
 
 class ApiReliabilityTests(unittest.TestCase):
     def test_chat_sends_bounded_image_as_openai_compatible_content(self):
@@ -193,6 +202,8 @@ class ApiReliabilityTests(unittest.TestCase):
         self.assertEqual(request.full_url, "https://api.groq.com/openai/v1/chat/completions")
         self.assertEqual(request.get_header("Authorization"), "Bearer secret-key")
         self.assertEqual(payload["model"], "llama-3.3-70b-versatile")
+        self.assertEqual(payload["max_tokens"], app.MAX_CHAT_OUTPUT_TOKENS)
+        self.assertIn("usually one to four sentences", payload["messages"][0]["content"])
         self.assertNotIn("secret-key", json.dumps(payload))
 
     def test_gemini_uses_openai_compatible_endpoint_and_provider_defaults(self):
@@ -240,12 +251,46 @@ class ApiReliabilityTests(unittest.TestCase):
         )
 
         with patch("app.open_provider_request", side_effect=error):
-            with self.assertRaisesRegex(RuntimeError, "Groq returned HTTP 403") as raised:
+            with self.assertRaisesRegex(RuntimeError, "Groq denied access") as raised:
                 app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
 
         self.assertNotIn("secret-key", str(raised.exception))
         self.assertNotIn("llama-3.3", str(raised.exception))
         self.assertTrue(error_body.closed)
+
+    def test_provider_auth_quota_and_timeout_errors_are_actionable_and_safe(self):
+        cases = (
+            (401, "Your API key was rejected"),
+            (429, "rate limit or quota reached"),
+            (503, "temporarily unavailable"),
+        )
+        for status, expected in cases:
+            with self.subTest(status=status):
+                error = urllib.error.HTTPError("https://api.groq.com/request", status, "failure", email.message.Message(), io.BytesIO(b'{"error":"sensitive provider detail"}'))
+                with patch("app.open_provider_request", side_effect=error):
+                    with self.assertRaisesRegex(RuntimeError, expected) as raised:
+                        app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
+                self.assertNotIn("sensitive provider detail", str(raised.exception))
+
+        with patch("app.open_provider_request", side_effect=TimeoutError()):
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
+                app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
+
+        with patch("app.open_provider_request", side_effect=http.client.IncompleteRead(b"partial")):
+            with self.assertRaisesRegex(RuntimeError, "response from Groq was interrupted"):
+                app.generate_reply("hello", [], "normal", provider="groq", user_api_key="secret-key")
+
+    def test_provider_slot_rejection_does_not_start_or_reserve_request(self):
+        on_request_start = Mock()
+        with patch("app._provider_slots") as slots, patch("app.open_provider_request") as provider:
+            slots.acquire.return_value = False
+            with self.assertRaisesRegex(RuntimeError, "busy handling"):
+                app.generate_reply(
+                    "hello", [], "normal", provider="groq", user_api_key="secret-key",
+                    on_request_start=on_request_start,
+                )
+        on_request_start.assert_not_called()
+        provider.assert_not_called()
 
 
 class ConversationMemoryTests(unittest.TestCase):
@@ -325,6 +370,8 @@ class ModelCompatibilityTests(unittest.TestCase):
         self.assertEqual(request.get_header("Anthropic-version"), "2023-06-01")
         self.assertNotIn("Authorization", dict(request.header_items()))
         self.assertIn("system", payload)
+        self.assertEqual(payload["max_tokens"], app.MAX_CHAT_OUTPUT_TOKENS)
+        self.assertIn("usually one to four sentences", payload["system"])
         self.assertNotIn("system", {message["role"] for message in payload["messages"]})
 
     def test_ollama_uses_local_openai_compatible_endpoint_without_auth(self):

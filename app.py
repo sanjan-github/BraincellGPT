@@ -5,6 +5,7 @@ Set GROQ_API_KEY in the environment or in a local .env file.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import base64
 import hmac
@@ -19,10 +20,14 @@ from collections import OrderedDict, defaultdict, deque
 from threading import BoundedSemaphore, Lock
 import time
 import re
-from typing import Any
+from typing import Any, Callable
 from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 from backend.media import anthropic_content, normalize_images, openai_content
 from backend.provider_registry import AZURE_OPENAI_PROVIDER, OPENAI_COMPATIBLE_PROVIDERS, provider_capabilities
+from backend.chat_usage import (
+    ChatUsageStore, ConversationNotFound, DuplicateChatRequest,
+    MAX_MESSAGES_PER_CONVERSATION, MessageLimitReached,
+)
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
@@ -42,8 +47,20 @@ MAX_HTTP_HANDLERS = 64
 HTTP_READ_TIMEOUT_SECONDS = 10
 MAX_RATE_BUCKETS = 2048
 MAX_PROVIDER_RESPONSE_BYTES = SHARED_MAX_PROVIDER_RESPONSE_BYTES
+MAX_CHAT_OUTPUT_TOKENS = 800
 _provider_slots = PROVIDER_SLOTS
+_chat_usage_store_instance: ChatUsageStore | None = None
+_chat_usage_store_lock = Lock()
 SUPPORTED_PROVIDER_NAMES = tuple(OPENAI_COMPATIBLE_PROVIDERS) + ("azure_openai", "anthropic", "ollama", "lmstudio", "custom")
+
+
+def _chat_usage_store() -> ChatUsageStore:
+    global _chat_usage_store_instance
+    if _chat_usage_store_instance is None:
+        with _chat_usage_store_lock:
+            if _chat_usage_store_instance is None:
+                _chat_usage_store_instance = ChatUsageStore()
+    return _chat_usage_store_instance
 
 
 def rate_limited(client_ip: str) -> bool:
@@ -220,13 +237,14 @@ def build_system_prompt(personality: str) -> str:
     }
     style = styles.get(personality, styles["normal"])
     return (
-        "You are BrainCellGPT, an entertainment-first chaos companion built for stress relief and timepass. "
-        "Your personality is the product: be completely chaotic, absurd, funny, mischievous, and unpredictable, "
-        "but sensibly chaotic rather than random. Respond to the user's actual message, use the conversation "
-        "context, and make callbacks when they are genuinely funny or useful. Keep your replies coherent enough "
-        "to feel intentional. Do not sound like a generic assistant, formal help desk, therapist, or corporate bot. "
-        "Do not force a joke into every sentence, repeat the same format or punchline, dump unnecessary lists, "
-        "add disclaimers. Do not overexplain jokes. Match the user's energy and let the conversation breathe. "
+        "You are BrainCellGPT, a funny, casual, occasionally chaotic chatbot for stress relief, curious questions, and entertaining conversation. "
+        "Sound like a natural, native-speaking person chatting with another person. Be witty and occasionally "
+        "absurd, but do not force a joke into every sentence. Keep replies short by default, usually one to four "
+        "sentences. Respond to the user's actual message and match its tone and length: answer briefly when appropriate, and give a detailed "
+        "answer when the user asks for one. Be direct; avoid repetitive introductions, summaries, dramatic roleplay, "
+        "excessive emojis, unnecessary lists, and a question at the end of every reply. Do not repeatedly use "
+        "nicknames for the user. Do not overexplain jokes. Use the conversation context and callbacks only when "
+        "they fit naturally. Keep clarity first. Do not sound like a generic assistant, formal help desk, or corporate bot. "
         "When the user is clearly asking for serious or sensitive help, stay kind and sensible without abandoning "
         "your distinctive voice. Never invent certainty, encourage harm, or use chaos as an excuse to ignore the "
         "user's request. "
@@ -273,7 +291,7 @@ def _read_provider_json(response, label: str) -> object:
         raise RuntimeError(label + " returned an invalid JSON response.") from exc
 
 
-def generate_reply(message: str, history: list[dict], personality: str, provider: str = "groq", user_api_key: str = "", base_url: str = "", model_override: str = "", images: list[str] | None = None) -> str:
+def generate_reply(message: str, history: list[dict], personality: str, provider: str = "groq", user_api_key: str = "", base_url: str = "", model_override: str = "", images: list[str] | None = None, on_request_start: Callable[[], int] | None = None) -> str:
     """Call Groq, Anthropic, Ollama, or an OpenAI-compatible endpoint."""
     provider = provider.strip().lower()
     api_key = user_api_key.strip()
@@ -364,7 +382,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     headers = {"Content-Type": "application/json"}
     if protocol == "anthropic":
         headers.update({"x-api-key": api_key, "anthropic-version": "2023-06-01"})
-        payload = {"model": model, "system": system_text, "messages": [m for m in messages if m["role"] != "system"], "max_tokens": 1200, "temperature": 0.7}
+        payload = {"model": model, "system": system_text, "messages": [m for m in messages if m["role"] != "system"], "max_tokens": MAX_CHAT_OUTPUT_TOKENS, "temperature": 0.7}
     else:
         headers["Authorization"] = "Bearer " + api_key if api_key else ""
         if not api_key:
@@ -372,12 +390,14 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         if protocol == "azure-openai":
             headers.pop("Authorization", None)
             headers["api-key"] = api_key
-        payload = {"model": model, "messages": messages, "temperature": 0.7, "max_tokens": 1200}
+        payload = {"model": model, "messages": messages, "temperature": 0.7, "max_tokens": MAX_CHAT_OUTPUT_TOKENS}
     request = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
     try:
         if not _provider_slots.acquire(timeout=2):
             raise RuntimeError("BrainCellGPT is busy handling other provider requests. Try again shortly.")
         try:
+            if on_request_start is not None:
+                on_request_start()
             with open_provider_request(request, timeout=60, pinned_addresses=pinned_addresses) as response:
                 data = _read_provider_json(response, label)
         finally:
@@ -385,48 +405,32 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     except json.JSONDecodeError as exc:
         raise RuntimeError(label + " returned an invalid JSON response.") from exc
     except urllib.error.HTTPError as exc:
-        # Surface a short, sanitized provider error so a bad base URL can be
-        # distinguished from a model/permission issue without exposing credentials.
-        detail = ""
         try:
-            raw_error = exc.read(8192).decode("utf-8", errors="replace")
-            parsed_error = json.loads(raw_error)
-            error_obj = parsed_error.get("error", parsed_error) if isinstance(parsed_error, dict) else {}
-            if isinstance(error_obj, dict):
-                detail = error_obj.get("message") or error_obj.get("detail") or error_obj.get("error_description") or ""
-            elif isinstance(error_obj, str):
-                detail = error_obj
-            if not detail and isinstance(parsed_error, dict):
-                detail = parsed_error.get("message", "")
-        except (ValueError, AttributeError):
-            detail = ""
-        finally:
             exc.close()
-        detail = str(detail).replace(api_key, "[redacted]") if api_key else str(detail)
-        detail = " ".join(detail.split())[:300]
-        suffix = " Provider detail: " + detail if detail else ""
-        if provider == "nvidia_nim" and exc.code == 403:
-            raise RuntimeError(
-                "NVIDIA NIM returned HTTP 403: Authorization failed. The API endpoint and model ID can be correct while your NVIDIA account still lacks hosted inference access. Confirm the key was generated in NVIDIA Build and try the model in its Playground. If Playground works but this API call fails, ask NVIDIA support to check hosted NIM inference access for your account."
-                + suffix
-            ) from exc
-        if provider == "groq" and exc.code == 403:
-            raise RuntimeError(
-                "Groq returned HTTP 403: the request was denied. Check the provider detail below, model access, and your Groq organization/project permissions."
-                + suffix
-            ) from exc
-        if exc.code in (400, 401, 403):
-            raise RuntimeError(label + " returned HTTP " + str(exc.code) + ". Check the API key, account permissions, and model ID." + suffix) from exc
+        except OSError:
+            pass
+        if exc.code == 400:
+            raise RuntimeError(label + " rejected the request. Check the selected model and its settings.") from exc
+        if exc.code == 401:
+            raise RuntimeError("Your API key was rejected by " + label + ". Check the key in provider settings.") from exc
+        if exc.code == 403:
+            raise RuntimeError(label + " denied access. Check your account permissions and model access.") from exc
         if exc.code == 404:
             if provider == "custom":
                 hint = " Verify the base URL is the provider's OpenAI-compatible API base (usually ending in /v1), and that the model ID is enabled for your account."
             else:
                 hint = " Verify the model ID and provider endpoint."
-            raise RuntimeError(label + " returned HTTP 404: endpoint or model not found." + hint + suffix) from exc
+            raise RuntimeError(label + " could not find the endpoint or model." + hint) from exc
         if exc.code == 429:
-            raise RuntimeError(label + " returned HTTP 429: rate limit or quota reached. Wait and try again." + suffix) from exc
-        raise RuntimeError(label + " returned HTTP " + str(exc.code) + "." + suffix) from exc
+            raise RuntimeError(label + " rate limit or quota reached. Wait and try again.") from exc
+        if exc.code >= 500:
+            raise RuntimeError(label + " is temporarily unavailable. Try again later.") from exc
+        raise RuntimeError(label + " could not process the request (HTTP " + str(exc.code) + ").") from exc
+    except http.client.HTTPException as exc:
+        raise RuntimeError("The response from " + label + " was interrupted. Please try again.") from exc
     except (urllib.error.URLError, TimeoutError) as exc:
+        if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
+            raise RuntimeError("The request to " + label + " timed out. Please try again.") from exc
         raise RuntimeError("Could not reach " + label + ". Check your connection and endpoint URL.") from exc
     return extract_provider_reply(data, protocol, label)
 
@@ -557,6 +561,24 @@ class Handler(BaseHTTPRequestHandler):
             configured = bool(_get_profile_secret(profile_id))
             self.send_json(200, {"configured": configured})
             return
+        elif path == "/api/conversations/usage":
+            if not self.is_trusted_local_request() or self.client_address[0] not in ("127.0.0.1", "::1"):
+                self.send_json(403, {"error": "This local app only accepts requests from this computer."})
+                return
+            if rate_limited(self.client_address[0] + ":conversation-usage"):
+                self.send_json(429, {"error": "Too many requests. Wait a minute and try again."})
+                return
+            conversation_id = parse_qs(urlparse(self.path).query).get("id", [""])[0]
+            try:
+                used = _chat_usage_store().usage(conversation_id)
+            except ValueError as exc:
+                self.send_json(400, {"error": str(exc)})
+                return
+            except ConversationNotFound:
+                self.send_json(404, {"error": "Conversation not found."})
+                return
+            self.send_json(200, {"messages_used": used, "message_limit": MAX_MESSAGES_PER_CONVERSATION})
+            return
         else:
             self.send_json(404, {"error": "Not found"})
             return
@@ -588,7 +610,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.require_authorization():
             return
         route = urlparse(self.path).path
-        if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret"):
+        if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/conversations"):
             self.send_json(404, {"error": "Not found"})
             return
         if self.client_address[0] not in ("127.0.0.1", "::1") or not self.is_trusted_local_request():
@@ -600,6 +622,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
             self.send_json(415, {"error": "Content-Type must be application/json."})
             return
+        reserved_count: int | None = None
         try:
             length = int(self.headers.get("Content-Length", "0"))
             max_body_bytes = 12_000_000 if route == "/api/chat" else 200_000
@@ -612,6 +635,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if route == "/api/profile-secret":
                 self._handle_profile_secret_post(payload)
+                return
+            if route == "/api/conversations":
+                conversation_id = _chat_usage_store().create_conversation()
+                self.send_json(201, {
+                    "conversation_id": conversation_id,
+                    "messages_used": 0,
+                    "message_limit": MAX_MESSAGES_PER_CONVERSATION,
+                })
                 return
             message = str(payload.get("message", "")).strip()
             if route == "/api/test-connection":
@@ -635,19 +666,54 @@ class Handler(BaseHTTPRequestHandler):
             # An explicitly entered key is used only for the connection check; normal
             # chat requests resolve their credential from process memory or .env.
             supplied_key = text_field("api_key") if route == "/api/test-connection" else ""
+            request_start = None
+            if route == "/api/chat":
+                conversation_id = text_field("conversation_id")
+                request_id = text_field("request_id")
+                usage_store = _chat_usage_store()
+                usage_store._validate_id(conversation_id, "conversation")
+                usage_store._validate_id(request_id, "request")
+                if usage_store.usage(conversation_id) >= MAX_MESSAGES_PER_CONVERSATION:
+                    raise MessageLimitReached
+
+                def reserve_chat_message() -> int:
+                    nonlocal reserved_count
+                    reserved_count = usage_store.reserve_message(conversation_id, request_id)
+                    return reserved_count
+
+                request_start = reserve_chat_message
             reply = generate_reply(
                 message, history, text_field("personality", "normal"),
                 text_field("provider", "groq"), supplied_key or saved_key,
                 text_field("base_url"), text_field("model"), images=images,
+                on_request_start=request_start,
             )
             if route == "/api/test-connection":
                 self.send_json(200, {"ok": True, "message": "Connection successful.", "provider": text_field("provider", "groq")})
             else:
-                self.send_json(200, {"reply": reply})
+                self.send_json(200, {
+                    "reply": reply,
+                    "messages_used": reserved_count,
+                    "message_limit": MAX_MESSAGES_PER_CONVERSATION,
+                })
         except json.JSONDecodeError:
             self.send_json(400, {"error": "Invalid JSON request."})
+        except ConversationNotFound:
+            self.send_json(404, {"error": "Conversation not found. Start a new conversation."})
+        except DuplicateChatRequest:
+            self.send_json(409, {"error": "This message was already submitted. Check the conversation before trying again."})
+        except MessageLimitReached:
+            self.send_json(429, {
+                "error": "This conversation has reached its 10-message limit. Start a new conversation to continue.",
+                "messages_used": MAX_MESSAGES_PER_CONVERSATION,
+                "message_limit": MAX_MESSAGES_PER_CONVERSATION,
+            })
         except RuntimeError as exc:
-            self.send_json(502, {"error": str(exc)})
+            print(f"[BrainCellGPT] chat request failed: {str(exc)[:300]}")
+            response_data = {"error": str(exc)}
+            if route == "/api/chat" and reserved_count is not None:
+                response_data.update({"messages_used": reserved_count, "message_limit": MAX_MESSAGES_PER_CONVERSATION})
+            self.send_json(502, response_data)
         except ValueError as exc:
             self.send_json(400, {"error": str(exc)})
         except Exception as exc:

@@ -47,6 +47,23 @@ class ChatInterfaceMarkupTests(unittest.TestCase):
 
         self.assertTrue(badge_expression.endswith(": providerLabel;"))
 
+    def test_chat_ui_exposes_message_allowance_and_compact_scrollable_composer(self):
+        source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="messageCounter" role="status" aria-live="polite"', source)
+        self.assertIn('id="newChat"', source)
+        self.assertIn("max-height: 160px", source)
+        self.assertIn('input.style.overflowY = input.scrollHeight > maximum ? "auto" : "hidden";', source)
+        self.assertIn('if (e.key === "Enter" && !e.shiftKey)', source)
+        self.assertIn("messages_used", source)
+        self.assertIn('messagesUsed >= MESSAGE_LIMIT', source)
+
+    def test_message_surfaces_have_no_heavy_card_borders_and_focus_boundary_remains(self):
+        source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("/* Keep the conversation open: separate turns with spacing and type, not cards. */", source)
+        self.assertIn(".user-message-panel {\n  background: transparent;\n  border: 0;", source)
+        self.assertIn(".assistant-message-panel {\n  background: transparent;\n  border: 0;", source)
+        self.assertIn(".composer-container:focus-within", source)
+
 
 if __name__ == "__main__":
     unittest.main()

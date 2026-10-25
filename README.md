@@ -13,7 +13,7 @@ An entertaining chatbot for curious questions, strange tangents, and conversatio
 
 BrainCellGPT is a small Python application with a browser-based chat interface. Choose a hosted model provider, connect a local Ollama or LM Studio server, or configure a compatible custom endpoint. The interface keeps the focus on chatting; it does not provide repository editing or autonomous development tools.
 
-The server uses Python's standard library and serves the included web interface directly. No frontend build step or database is required.
+The server uses Python's standard library and serves the included web interface directly. No frontend build step or extra database package is required; SQLite from Python stores the per-conversation message allowance locally.
 
 ## Features
 
@@ -22,10 +22,11 @@ The server uses Python's standard library and serves the included web interface 
 - Enter a provider API key in the settings panel or use a key from `.env`.
 - Check provider connectivity from the app.
 - Start a new conversation and copy assistant replies.
-- Keep conversation history in the current browser tab; it clears when the tab is refreshed or a new chat is started.
+- Send up to 10 provider requests in each conversation, with the count enforced by the local server and preserved across reloads.
+- Restore the current conversation's messages after a page refresh in the same browser tab; start a new chat to create a fresh allowance.
 - Use a responsive, single-page interface with a playful space theme.
 
-Provider features and model availability vary. Chat replies currently return as complete responses; the chatbot interface does not stream tokens.
+Provider features and model availability vary. Chat replies currently return as complete responses; the chatbot interface does not stream tokens. An attempt uses one of the 10 messages when its provider request begins, including a request that later fails or times out. Requests rejected before that point do not count. The app does not automatically retry provider requests; submitting again starts a new attempt and may use another message.
 
 ## Requirements
 
@@ -105,6 +106,8 @@ Model IDs, capabilities, pricing, and service availability are controlled by eac
 - A key entered in the app is sent to the local BrainCellGPT server and kept in process memory. The cache is capped at 128 profiles and keys expire after 24 hours; stopping the app clears it.
 - `.env` keys remain on the machine running the server. Do not commit `.env` or share real credentials.
 - Provider profiles contain nonsecret settings and are stored in browser `sessionStorage`.
+- The local SQLite file `chat-usage.sqlite3` stores random conversation/request IDs and message counts only; it does not store prompts, replies, or API keys. Its location follows `BRAINCELLGPT_DATA_DIR`, or the platform's local BrainCellGPT application-data directory.
+- The 10-message allowance applies per conversation on this app installation. It is not a global spending limit for a provider API key shared with other apps or users.
 - Prompts and conversation history sent to a hosted provider are subject to that provider's data handling and retention terms. Local models send requests to the configured local service.
 - The server binds to loopback by default. Do not expose it directly to an untrusted network. Remote access is an explicit advanced configuration requiring an authentication token and a trusted TLS reverse proxy; see [Security](docs/security.md).
 

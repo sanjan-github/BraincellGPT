@@ -585,9 +585,10 @@ button:active {
   font-size: var(--text-body);
   font-weight: 400;
   line-height: 1.5;
-  min-height: 52px;
-  max-height: 200px;
-  padding: 4px 0 8px 0;
+  min-height: 36px;
+  max-height: 160px;
+  overflow-y: hidden;
+  padding: 6px 0;
   box-shadow: none !important;
 }
 
@@ -1218,30 +1219,35 @@ button:active {
   box-shadow: none;
 }
 
-/* Glass Message Panels */
+/* Keep the conversation open: separate turns with spacing and type, not cards. */
 .user-message-panel {
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-top: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  backdrop-filter: blur(20px) saturate(170%);
-  -webkit-backdrop-filter: blur(20px) saturate(170%);
-  border-radius: 18px;
-  padding: 12px 18px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-radius: 0;
+  padding: 4px 0;
   color: #ffffff;
 }
 
 .assistant-message-panel {
-  background: rgba(18, 22, 32, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-top: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border-radius: 18px;
-  padding: 16px 20px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-radius: 0;
+  padding: 4px 0;
+  max-width: 100%;
   color: #f1f2f4;
 }
+
+.chat-turn { margin-block: 5px; }
+.composer-bottom-bar { justify-content: space-between; align-items: center; margin-top: 0; }
+.message-counter { color: var(--text-tertiary); font-size: 12px; line-height: 1.4; }
+.message-counter[data-limit="reached"] { color: #ffc0a8; }
+.btn-submit-pill { top: 0; width: 40px; height: 40px; flex: 0 0 40px; }
 
 .thinking-notice {
   background: rgba(255, 255, 255, 0.04);
@@ -1357,12 +1363,13 @@ button:active {
       </div>
     </section>
 
-    <div class="chat-composer-dock">
+  <div class="chat-composer-dock">
       <div class="composer-container" id="composerCard">
         <form id="chatForm">
           <textarea class="composer-textarea" id="messageInput" rows="1" maxlength="12000" placeholder="Say something delightfully ridiculous…" aria-label="Message BraincellGPT"></textarea>
           <div class="composer-bottom-bar">
-            <button class="btn-submit-pill" id="send" type="submit" aria-label="Send message">
+            <span class="message-counter" id="messageCounter" role="status" aria-live="polite">Starting conversation…</span>
+            <button class="btn-submit-pill" id="send" type="submit" aria-label="Send message" disabled>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
             </button>
           </div>
@@ -1454,6 +1461,8 @@ button:active {
   const welcome = document.querySelector("#welcome");
   const errorEl = document.querySelector("#error");
   const errorMessage = document.querySelector("#errorMessage");
+  const messageCounter = document.querySelector("#messageCounter");
+  const newChatButton = document.querySelector("#newChat");
   const apiKeyInput = document.querySelector("#apiKey");
   const apiKeyStatus = document.querySelector("#apiKeyStatus");
   const providerSelect = document.querySelector("#providerSelect");
@@ -1633,6 +1642,90 @@ button:active {
   // Chat Execution
   let history = [];
   let busy = false;
+  let conversationId = "";
+  let messagesUsed = 0;
+  let conversationReady = false;
+  let conversationSetupPending = true;
+  const MESSAGE_LIMIT = 10;
+  const conversationIdKey = "braincellgpt_active_conversation_v1";
+  const transcriptKey = id => "braincellgpt_transcript_v1_" + id;
+
+  function updateMessageCounter() {
+    const reached = messagesUsed >= MESSAGE_LIMIT;
+    messageCounter.textContent = conversationReady
+      ? `${messagesUsed}/${MESSAGE_LIMIT} messages used${reached ? " · Start a new chat to continue." : ""}`
+      : "Starting conversation…";
+    messageCounter.dataset.limit = reached ? "reached" : "available";
+    send.disabled = !conversationReady || busy || reached;
+    newChatButton.disabled = busy || conversationSetupPending;
+  }
+
+  async function readJsonResponse(response) {
+    try { return await response.json(); }
+    catch { throw new Error("The server returned an unreadable response. Please try again."); }
+  }
+
+  async function createConversation() {
+    const response = await fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    });
+    const data = await readJsonResponse(response);
+    if (!response.ok || typeof data.conversation_id !== "string") {
+      throw new Error(data.error || "Could not start a new conversation.");
+    }
+    conversationId = data.conversation_id;
+    messagesUsed = data.messages_used;
+    localStorage.setItem(conversationIdKey, conversationId);
+    history = [];
+    conversationReady = true;
+    updateMessageCounter();
+  }
+
+  function restoreTranscript() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(transcriptKey(conversationId)) || "[]");
+      if (!Array.isArray(saved)) return;
+      history = saved.filter(item => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string");
+      for (const item of history) renderMessage(item.role, item.content);
+      if (history.length) activeThreadTitle.textContent = history.find(item => item.role === "user")?.content.slice(0, 25) || "Conversation";
+    } catch {
+      history = [];
+    }
+  }
+
+  async function initializeConversation() {
+    updateMessageCounter();
+    try {
+      const storedId = localStorage.getItem(conversationIdKey) || "";
+      if (storedId) {
+        const response = await fetch(`/api/conversations/usage?id=${encodeURIComponent(storedId)}`);
+        if (response.ok) {
+          const data = await readJsonResponse(response);
+          conversationId = storedId;
+          messagesUsed = Number(data.messages_used) || 0;
+          conversationReady = true;
+          restoreTranscript();
+          updateMessageCounter();
+          return;
+        }
+        if (response.status !== 404) {
+          const data = await readJsonResponse(response);
+          throw new Error(data.error || "Could not restore this conversation.");
+        }
+      }
+      await createConversation();
+    } catch (err) {
+      errorEl.hidden = false;
+      errorMessage.textContent = err instanceof Error ? err.message : "Could not start the conversation.";
+      conversationReady = false;
+      updateMessageCounter();
+    } finally {
+      conversationSetupPending = false;
+      updateMessageCounter();
+    }
+  }
 
   function renderMessage(role, content) {
     welcome.style.display = "none";
@@ -1663,6 +1756,7 @@ button:active {
 
     messagesEl.appendChild(row);
     row.scrollIntoView({ behavior: "smooth", block: "end" });
+    return row;
   }
 
   function escapeHtml(str) {
@@ -1673,16 +1767,18 @@ button:active {
 
   function adjustTextareaHeight() {
     input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, 200) + "px";
+    const maximum = 160;
+    input.style.height = Math.min(input.scrollHeight, maximum) + "px";
+    input.style.overflowY = input.scrollHeight > maximum ? "auto" : "hidden";
   }
 
   input.addEventListener("input", adjustTextareaHeight);
 
   async function sendMessage(text) {
     text = text.trim();
-    if (!text || busy) return;
+    if (!text || busy || !conversationReady || messagesUsed >= MESSAGE_LIMIT) return;
     busy = true;
-    send.disabled = true;
+    updateMessageCounter();
     input.value = "";
     adjustTextareaHeight();
     errorEl.hidden = true;
@@ -1691,9 +1787,8 @@ button:active {
       activeThreadTitle.textContent = text.length > 25 ? text.substring(0, 25) + "..." : text;
     }
 
-    renderMessage("user", text);
+    const userRow = renderMessage("user", text);
     const prior = history.slice(-16);
-    history.push({ role: "user", content: text });
 
     const thinkingRow = document.createElement("div");
     thinkingRow.className = "chat-turn assistant";
@@ -1712,6 +1807,8 @@ button:active {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
+          conversation_id: conversationId,
+          request_id: newId(),
           history: prior,
           provider: providerSelect.value,
           profile_id: activeProfileId,
@@ -1719,18 +1816,35 @@ button:active {
           model: modelNameInput ? modelNameInput.value.trim() : ""
         })
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
+      if (Number.isInteger(data.messages_used)) messagesUsed = data.messages_used;
+      updateMessageCounter();
       if (!response.ok) throw new Error(data.error || "Request failed.");
+      history.push({ role: "user", content: text });
       history.push({ role: "assistant", content: data.reply });
+      try { sessionStorage.setItem(transcriptKey(conversationId), JSON.stringify(history)); } catch { /* The server still retains the authoritative count. */ }
       thinkingRow.remove();
       renderMessage("assistant", data.reply);
     } catch (err) {
       thinkingRow.remove();
+      userRow.remove();
+      if (!input.value) input.value = text;
+      adjustTextareaHeight();
+      if (!history.length) activeThreadTitle.textContent = "New conversation";
+      if (conversationReady) {
+        try {
+          const usageResponse = await fetch(`/api/conversations/usage?id=${encodeURIComponent(conversationId)}`);
+          if (usageResponse.ok) {
+            const usage = await readJsonResponse(usageResponse);
+            messagesUsed = Number(usage.messages_used) || 0;
+          }
+        } catch { /* Keep the last known count when the server cannot be reached. */ }
+      }
       errorEl.hidden = false;
       errorMessage.textContent = err instanceof Error ? err.message : "Something went wrong.";
     } finally {
       busy = false;
-      send.disabled = false;
+      updateMessageCounter();
       input.focus();
     }
   }
@@ -1754,7 +1868,7 @@ button:active {
           model: modelNameInput ? modelNameInput.value.trim() : ""
         })
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) throw new Error(data.error || "Connection test failed.");
       apiKeyStatus.dataset.state = "success";
       apiKeyStatus.textContent = "Connection verified.";
@@ -1804,14 +1918,31 @@ button:active {
     }
   });
 
-  document.querySelector("#newChat").addEventListener("click", () => {
-    history = [];
-    messagesEl.replaceChildren();
-    errorEl.hidden = true;
-    welcome.style.display = "flex";
-    activeThreadTitle.textContent = "New conversation";
-    input.focus();
+  newChatButton.addEventListener("click", async event => {
+    if (busy || conversationSetupPending) return;
+    const button = event.currentTarget;
+    conversationSetupPending = true;
+    button.disabled = true;
+    try {
+      await createConversation();
+      messagesEl.replaceChildren();
+      errorEl.hidden = true;
+      welcome.style.display = "flex";
+      activeThreadTitle.textContent = "New conversation";
+      sessionStorage.removeItem(transcriptKey(conversationId));
+      input.value = "";
+      adjustTextareaHeight();
+      input.focus();
+    } catch (err) {
+      errorEl.hidden = false;
+      errorMessage.textContent = err instanceof Error ? err.message : "Could not start a new conversation.";
+    } finally {
+      conversationSetupPending = false;
+      updateMessageCounter();
+    }
   });
+
+  initializeConversation();
 })();
 
 // ============================================================================

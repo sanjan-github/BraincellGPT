@@ -8,6 +8,7 @@ BrainCellGPT is intended to run on the same computer as its user. The default bi
 - Keys entered in **Chat settings** are sent to the local server and held in a bounded process-memory cache. The cache holds up to 128 profiles, expires keys after 24 hours, and is cleared when the server stops.
 - The server does not return saved profile keys to the browser. The browser stores provider profile metadata in `sessionStorage`; API key values are not stored there.
 - Keys in `.env` remain available to the server process. Protect the file and machine with the same care as the provider account.
+- The local `chat-usage.sqlite3` database stores random conversation/request IDs and counts only. It does not store chat text or provider keys; on POSIX systems its directory and file are restricted to the current user where the platform permits.
 - A hosted provider receives the submitted prompt and conversation history. Review that provider's privacy, retention, and training policies. Local Ollama and LM Studio requests go to the configured local service.
 
 ## Local HTTP protections
