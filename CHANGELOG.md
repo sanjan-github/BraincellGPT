@@ -27,7 +27,7 @@ BrainCellGPT 1.0 centers the application on its original purpose: humorous, ente
 
 - Chat history is kept in browser memory and is cleared on refresh or when starting a new conversation.
 - Chat replies are returned as complete responses; token streaming is not implemented in the chat interface.
-- Automated tests use mocked provider responses. Live provider, local-model, MCP, and OAuth integrations have not been verified as part of this release preparation.
+- One live Groq chat request through `POST /api/chat` succeeded during release preparation. Automated provider tests use mocks; other hosted providers, local models, MCP servers, and OAuth services have not been live-verified.
 - Passing the test suite does not establish production readiness.
 
 ## 0.1.0 — Single-file refactor

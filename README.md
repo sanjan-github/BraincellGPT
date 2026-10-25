@@ -125,7 +125,7 @@ python scripts/smoke_clean_install.py
 python -m compileall -q app.py backend tests scripts
 ```
 
-The CI workflow runs the application checks on Windows, macOS, and Linux with Python 3.11 and 3.12. Tests use mock provider responses; they do not establish live availability of every external provider.
+The CI workflow runs the application checks on Windows, macOS, and Linux with Python 3.11 and 3.12. Provider tests use mock responses; one live Groq chat request was also verified during 1.0 preparation. This does not establish live availability for every provider or model.
 
 ## Project layout
 

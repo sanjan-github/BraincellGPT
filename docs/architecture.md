@@ -40,5 +40,5 @@ The server binds to loopback by default. It validates request hosts and origins,
 
 - Browser conversation history is temporary and is not synchronized or persisted by the server.
 - Chat responses are returned as complete JSON replies rather than token streams.
-- Provider connectivity tests and mocked unit tests cannot establish that every model is currently available or that a live provider integration works in every account or region.
+- One live Groq request through `POST /api/chat` succeeded during 1.0 preparation. Mocked tests and this single spot check do not establish availability for other providers, models, accounts, or regions.
 - The app is intended for local use. Remote access is an advanced opt-in and depends on a correctly configured TLS reverse proxy.
