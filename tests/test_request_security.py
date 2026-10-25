@@ -8,13 +8,14 @@ from typing import cast
 from unittest.mock import MagicMock, patch
 
 import app
-from backend.chat_usage import ChatUsageStore
+from backend.chat_usage import ChatUsageStore, SHARED_GROQ_MODE
 
 
 class RequestSecurityIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.usage_store = ChatUsageStore(Path(self.temp_dir.name) / "chat-usage.sqlite3")
+        self.usage_store.set_credential_mode(SHARED_GROQ_MODE)
         self.usage_store_patcher = patch("app._chat_usage_store", return_value=self.usage_store)
         self.usage_store_patcher.start()
         self.server = app.BoundedThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
@@ -124,12 +125,12 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["reply"], "short reply")
         self.assertEqual(result["messages_used"], 1)
-        self.assertEqual(self.usage_store.usage(conversation_id), 1)
+        self.assertEqual(self.usage_store.shared_usage(), 1)
 
     def test_chat_limit_cannot_be_bypassed_through_direct_api_request(self):
         conversation_id = self.usage_store.create_conversation()
         for index in range(10):
-            self.usage_store.reserve_message(conversation_id, f"{index:032x}")
+            self.usage_store.reserve_shared_message(conversation_id, f"{index:032x}")
         with patch("app.open_provider_request") as provider:
             status, result = self._post_json("/api/chat", {
                 "message": "one more", "provider": "groq", "conversation_id": conversation_id,
@@ -137,7 +138,7 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
             })
         self.assertEqual(status, 429)
         self.assertEqual(result["messages_used"], 10)
-        self.assertIn("10-message limit", result["error"])
+        self.assertIn("all 10 messages for this installation", result["error"])
         provider.assert_not_called()
 
     def test_failed_provider_attempt_is_counted_and_duplicate_request_is_rejected(self):
@@ -154,7 +155,7 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
             status, duplicate = self._post_json("/api/chat", payload)
         self.assertEqual(status, 409)
         self.assertIn("already submitted", duplicate["error"])
-        self.assertEqual(self.usage_store.usage(conversation_id), 1)
+        self.assertEqual(self.usage_store.shared_usage(), 1)
         self.assertEqual(provider.call_count, 1)
 
     def test_missing_provider_key_does_not_consume_allowance(self):
@@ -166,8 +167,75 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
             })
         self.assertEqual(status, 502)
         self.assertIn("No API key is configured", result["error"])
-        self.assertEqual(self.usage_store.usage(conversation_id), 0)
+        self.assertEqual(self.usage_store.shared_usage(), 0)
         provider.assert_not_called()
+
+    def test_own_key_mode_uses_saved_profile_key_without_shared_fallback_or_limit(self):
+        self.usage_store.set_credential_mode("own_key")
+        conversation_id = self.usage_store.create_conversation()
+        profile_id = "profile123"
+        self.addCleanup(app._set_profile_secret, profile_id, "")
+        app._set_profile_secret(profile_id, "profile-key")
+        response_body = MagicMock()
+        response_body.read.return_value = b'{"choices":[{"message":{"content":"Own key reply"}}]}'
+        response_body.__enter__.return_value = response_body
+        with patch.dict("os.environ", {"GROQ_API_KEY": "shared-key"}), patch("app.open_provider_request", return_value=response_body) as provider:
+            status, result = self._post_json("/api/chat", {
+                "message": "hello", "provider": "groq", "profile_id": profile_id,
+                "conversation_id": conversation_id, "request_id": "e" * 32,
+            })
+        self.assertEqual(status, 200)
+        self.assertEqual(result["reply"], "Own key reply")
+        self.assertEqual(result["credential_mode"], "own_key")
+        self.assertNotIn("messages_used", result)
+        self.assertEqual(self.usage_store.shared_usage(), 0)
+        request = provider.call_args.args[0]
+        self.assertEqual(request.headers.get("Authorization"), "Bearer profile-key")
+
+    def test_shared_key_mode_ignores_profile_and_client_supplied_keys(self):
+        conversation_id = self.usage_store.create_conversation()
+        self.addCleanup(app._set_profile_secret, "profile456", "")
+        app._set_profile_secret("profile456", "profile-key")
+        response_body = MagicMock()
+        response_body.read.return_value = b'{"choices":[{"message":{"content":"Shared reply"}}]}'
+        response_body.__enter__.return_value = response_body
+        with patch.dict("os.environ", {"GROQ_API_KEY": "installation-key"}), patch("app.open_provider_request", return_value=response_body) as provider:
+            status, result = self._post_json("/api/chat", {
+                "message": "hello", "provider": "groq", "profile_id": "profile456", "api_key": "client-key",
+                "conversation_id": conversation_id, "request_id": "f" * 32,
+            })
+        self.assertEqual(status, 200)
+        request = provider.call_args.args[0]
+        self.assertEqual(request.headers.get("Authorization"), "Bearer installation-key")
+        self.assertNotIn("installation-key", json.dumps(result))
+
+    def test_chat_config_persists_choice_and_rejects_unconfigured_shared_mode(self):
+        status, own = self._post_json("/api/chat/config", {"credential_mode": "own_key"})
+        self.assertEqual(status, 200)
+        self.assertEqual(own["credential_mode"], "own_key")
+        self.assertEqual(self.usage_store.credential_mode(), "own_key")
+        status, invalid = self._post_json("/api/chat/config", {"credential_mode": "unlimited"})
+        self.assertEqual(status, 400)
+        self.assertIn("Choose shared Groq access", invalid["error"])
+        with patch.dict("os.environ", {"GROQ_API_KEY": ""}):
+            status, unavailable = self._post_json("/api/chat/config", {"credential_mode": "shared_groq"})
+        self.assertEqual(status, 400)
+        self.assertNotIn("API key", json.dumps(unavailable))
+
+    def test_chat_config_returns_mode_and_usage_without_any_credential(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        self.usage_store.reserve_shared_message(self.usage_store.create_conversation(), "9" * 32)
+        try:
+            with patch("app.PORT", self.server.server_port), patch.dict("os.environ", {"GROQ_API_KEY": "secret-key"}):
+                connection.request("GET", "/api/chat/config")
+                response = connection.getresponse()
+                body = response.read().decode()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(self.usage_store.shared_usage(), 1)
+            self.assertNotIn("secret-key", body)
+            self.assertIn('"shared_messages_used": 1', body)
+        finally:
+            connection.close()
 
     def test_chatbot_http_surface_does_not_expose_coding_agent_or_mcp_oauth(self):
         requests = (

@@ -11,6 +11,9 @@ from pathlib import Path
 
 
 MAX_MESSAGES_PER_CONVERSATION = 10
+MAX_SHARED_MESSAGES_PER_INSTALLATION = 10
+SHARED_GROQ_MODE = "shared_groq"
+OWN_KEY_MODE = "own_key"
 CONVERSATION_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 REQUEST_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 
@@ -65,6 +68,47 @@ class ChatUsageStore:
                     PRIMARY KEY (conversation_id, request_id)
                 )
             """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS app_config (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                    credential_mode TEXT CHECK(credential_mode IN ('shared_groq', 'own_key'))
+                )
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS shared_allowance (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                    messages_used INTEGER NOT NULL DEFAULT 0
+                        CHECK(messages_used BETWEEN 0 AND 10)
+                )
+            """)
+            allowance_exists = db.execute(
+                "SELECT 1 FROM shared_allowance WHERE singleton = 1"
+            ).fetchone()
+            if allowance_exists is None:
+                db.execute(
+                    "INSERT INTO shared_allowance(singleton, messages_used) "
+                    "SELECT 1, min(?, coalesce(sum(messages_used), 0)) FROM conversations",
+                    (MAX_SHARED_MESSAGES_PER_INSTALLATION,),
+                )
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS shared_requests (
+                    request_id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                )
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS own_requests (
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                    request_id TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (conversation_id, request_id)
+                )
+            """)
+            db.execute(
+                "INSERT OR IGNORE INTO shared_requests(request_id, conversation_id, created_at) "
+                "SELECT request_id, conversation_id, created_at FROM chat_requests"
+            )
         if os.name != "nt":
             try:
                 self.path.chmod(0o600)
@@ -93,6 +137,81 @@ class ChatUsageStore:
         with self._connect() as db:
             db.execute("INSERT INTO conversations(id, created_at) VALUES(?, ?)", (conversation_id, time.time()))
         return conversation_id
+
+    def delete_conversation(self, conversation_id: str) -> None:
+        self._validate_id(conversation_id, "conversation")
+        with self._connect() as db:
+            db.execute("DELETE FROM chat_requests WHERE conversation_id = ?", (conversation_id,))
+            db.execute("DELETE FROM own_requests WHERE conversation_id = ?", (conversation_id,))
+            db.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+
+    def credential_mode(self) -> str | None:
+        with self._connect() as db:
+            row = db.execute("SELECT credential_mode FROM app_config WHERE singleton = 1").fetchone()
+        return str(row[0]) if row and row[0] else None
+
+    def set_credential_mode(self, mode: str | None) -> None:
+        if mode not in (None, SHARED_GROQ_MODE, OWN_KEY_MODE):
+            raise ValueError("Choose shared Groq access or your own provider key.")
+        with self._connect() as db:
+            if mode is None:
+                db.execute("DELETE FROM app_config WHERE singleton = 1")
+            else:
+                db.execute(
+                    "INSERT INTO app_config(singleton, credential_mode) VALUES(1, ?) "
+                    "ON CONFLICT(singleton) DO UPDATE SET credential_mode = excluded.credential_mode",
+                    (mode,),
+                )
+
+    def shared_usage(self) -> int:
+        with self._connect() as db:
+            row = db.execute("SELECT messages_used FROM shared_allowance WHERE singleton = 1").fetchone()
+        return int(row[0]) if row else 0
+
+    def reserve_shared_message(self, conversation_id: str, request_id: str) -> int:
+        """Atomically consume the installation-wide shared-key allowance."""
+        self._validate_id(conversation_id, "conversation")
+        self._validate_id(request_id, "request")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            exists = db.execute("SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)).fetchone()
+            if exists is None:
+                raise ConversationNotFound
+            if db.execute("SELECT 1 FROM shared_requests WHERE request_id = ?", (request_id,)).fetchone():
+                raise DuplicateChatRequest
+            row = db.execute("SELECT messages_used FROM shared_allowance WHERE singleton = 1").fetchone()
+            used = int(row[0]) if row else 0
+            if used >= MAX_SHARED_MESSAGES_PER_INSTALLATION:
+                raise MessageLimitReached
+            used += 1
+            db.execute(
+                "INSERT INTO shared_allowance(singleton, messages_used) VALUES(1, ?) "
+                "ON CONFLICT(singleton) DO UPDATE SET messages_used = excluded.messages_used",
+                (used,),
+            )
+            db.execute(
+                "INSERT INTO shared_requests(request_id, conversation_id, created_at) VALUES(?, ?, ?)",
+                (request_id, conversation_id, time.time()),
+            )
+            db.execute("COMMIT")
+            return used
+
+    def reserve_own_request(self, conversation_id: str, request_id: str) -> None:
+        """Deduplicate own-key requests without applying the shared allowance."""
+        self._validate_id(conversation_id, "conversation")
+        self._validate_id(request_id, "request")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if not db.execute("SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)).fetchone():
+                raise ConversationNotFound
+            try:
+                db.execute(
+                    "INSERT INTO own_requests(conversation_id, request_id, created_at) VALUES(?, ?, ?)",
+                    (conversation_id, request_id, time.time()),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise DuplicateChatRequest from exc
+            db.execute("COMMIT")
 
     def usage(self, conversation_id: str) -> int:
         self._validate_id(conversation_id, "conversation")

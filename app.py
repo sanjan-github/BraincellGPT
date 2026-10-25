@@ -25,8 +25,8 @@ from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, MAX_PROVIDER
 from backend.media import anthropic_content, normalize_images, openai_content
 from backend.provider_registry import AZURE_OPENAI_PROVIDER, OPENAI_COMPATIBLE_PROVIDERS, provider_capabilities
 from backend.chat_usage import (
-    ChatUsageStore, ConversationNotFound, DuplicateChatRequest,
-    MAX_MESSAGES_PER_CONVERSATION, MessageLimitReached,
+    ChatUsageStore, ConversationNotFound, DuplicateChatRequest, MAX_MESSAGES_PER_CONVERSATION,
+    MAX_SHARED_MESSAGES_PER_INSTALLATION, MessageLimitReached, OWN_KEY_MODE, SHARED_GROQ_MODE,
 )
 
 ROOT = Path(__file__).resolve().parent
@@ -291,15 +291,18 @@ def _read_provider_json(response, label: str) -> object:
         raise RuntimeError(label + " returned an invalid JSON response.") from exc
 
 
-def generate_reply(message: str, history: list[dict], personality: str, provider: str = "groq", user_api_key: str = "", base_url: str = "", model_override: str = "", images: list[str] | None = None, on_request_start: Callable[[], int] | None = None) -> str:
+def generate_reply(message: str, history: list[dict], personality: str, provider: str = "groq", user_api_key: str = "", base_url: str = "", model_override: str = "", images: list[str] | None = None, on_request_start: Callable[[], int | None] | None = None, allow_environment_key: bool = True) -> str:
     """Call Groq, Anthropic, Ollama, or an OpenAI-compatible endpoint."""
     provider = provider.strip().lower()
     api_key = user_api_key.strip()
     model = model_override.strip()
     pinned_addresses = None
+    def configured_environment_key(name: str) -> str:
+        return os.environ.get(name, "").strip() if allow_environment_key else ""
+
     if provider in OPENAI_COMPATIBLE_PROVIDERS:
         config = OPENAI_COMPATIBLE_PROVIDERS[provider]
-        api_key = api_key or (os.environ.get(config.get("env_key", ""), "").strip() if config.get("env_key") else "")
+        api_key = api_key or (configured_environment_key(config.get("env_key", "")) if config.get("env_key") else "")
         if not model:
             model = (os.environ.get(config["env_model"], "").strip() or config["model"]) if config.get("env_model") else config["model"]
         endpoint = config["base_url"] + "/chat/completions"
@@ -320,7 +323,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         label = "Ollama"
         api_key = api_key or ""
     elif provider == "azure_openai":
-        api_key = api_key or os.environ.get(AZURE_OPENAI_PROVIDER["env_key"], "").strip()
+        api_key = api_key or configured_environment_key(AZURE_OPENAI_PROVIDER["env_key"])
         base_url = base_url.strip() or os.environ.get(AZURE_OPENAI_PROVIDER["env_endpoint"], "").strip()
         if not base_url:
             raise RuntimeError("Enter an Azure OpenAI v1 endpoint, or set AZURE_OPENAI_ENDPOINT in .env.")
@@ -335,7 +338,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     elif provider == "custom":
         # Custom API settings may be supplied by the UI or kept privately in .env.
         base_url = base_url.strip() or os.environ.get("CUSTOM_API_BASE_URL", "").strip()
-        api_key = api_key or os.environ.get("CUSTOM_API_KEY", "").strip()
+        api_key = api_key or configured_environment_key("CUSTOM_API_KEY")
         model = model or os.environ.get("CUSTOM_MODEL", "").strip()
         if not base_url:
             raise RuntimeError("Enter an API base URL, or set CUSTOM_API_BASE_URL in .env.")
@@ -347,7 +350,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         protocol = "openai"
         label = "Custom provider"
     elif provider == "anthropic":
-        api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        api_key = api_key or configured_environment_key("ANTHROPIC_API_KEY")
         model = model or "claude-3-5-haiku-latest"
         endpoint = "https://api.anthropic.com/v1/messages"
         protocol = "anthropic"
@@ -355,6 +358,8 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
     else:
         raise RuntimeError("Choose a supported provider.")
     if not api_key and provider not in ("ollama", "lmstudio"):
+        if not allow_environment_key:
+            raise RuntimeError("Your own API key is not saved for " + label + ". Open Settings, save your key, and verify the connection.")
         env_name = ""
         if provider in OPENAI_COMPATIBLE_PROVIDERS:
             env_name = OPENAI_COMPATIBLE_PROVIDERS[provider].get("env_key", "")
@@ -561,6 +566,22 @@ class Handler(BaseHTTPRequestHandler):
             configured = bool(_get_profile_secret(profile_id))
             self.send_json(200, {"configured": configured})
             return
+        elif path == "/api/chat/config":
+            if not self.is_trusted_local_request() or self.client_address[0] not in ("127.0.0.1", "::1"):
+                self.send_json(403, {"error": "This local app only accepts requests from this computer."})
+                return
+            if rate_limited(self.client_address[0] + ":chat-config"):
+                self.send_json(429, {"error": "Too many requests. Wait a minute and try again."})
+                return
+            usage_store = _chat_usage_store()
+            mode = usage_store.credential_mode()
+            self.send_json(200, {
+                "credential_mode": mode,
+                "shared_groq_available": bool(os.environ.get("GROQ_API_KEY", "").strip()),
+                "shared_messages_used": usage_store.shared_usage() if mode == SHARED_GROQ_MODE else None,
+                "shared_message_limit": MAX_SHARED_MESSAGES_PER_INSTALLATION,
+            })
+            return
         elif path == "/api/conversations/usage":
             if not self.is_trusted_local_request() or self.client_address[0] not in ("127.0.0.1", "::1"):
                 self.send_json(403, {"error": "This local app only accepts requests from this computer."})
@@ -606,11 +627,36 @@ class Handler(BaseHTTPRequestHandler):
         _set_profile_secret(profile_id, api_key.strip())
         self.send_json(200, {"ok": True, "configured": bool(api_key.strip())})
 
+    def _handle_chat_config_post(self, payload: dict) -> None:
+        mode = payload.get("credential_mode")
+        if mode == SHARED_GROQ_MODE and not os.environ.get("GROQ_API_KEY", "").strip():
+            self.send_json(400, {"error": "BrainCellGPT free Groq access is not configured on this installation. Choose your own provider key instead."})
+            return
+        _chat_usage_store().set_credential_mode(mode)
+        self.send_json(200, {"credential_mode": mode})
+
+    def _handle_post_control_route(self, route: str, payload: dict) -> bool:
+        if route == "/api/profile-secret":
+            self._handle_profile_secret_post(payload)
+            return True
+        if route == "/api/chat/config":
+            self._handle_chat_config_post(payload)
+            return True
+        if route == "/api/conversations":
+            conversation_id = _chat_usage_store().create_conversation()
+            self.send_json(201, {
+                "conversation_id": conversation_id,
+                "messages_used": 0,
+                "message_limit": MAX_MESSAGES_PER_CONVERSATION,
+            })
+            return True
+        return False
+
     def do_POST(self) -> None:
         if not self.require_authorization():
             return
         route = urlparse(self.path).path
-        if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/conversations"):
+        if route not in ("/api/chat", "/api/test-connection", "/api/profile-secret", "/api/conversations", "/api/chat/config"):
             self.send_json(404, {"error": "Not found"})
             return
         if self.client_address[0] not in ("127.0.0.1", "::1") or not self.is_trusted_local_request():
@@ -633,16 +679,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 self.send_json(400, {"error": "Request body must be a JSON object."})
                 return
-            if route == "/api/profile-secret":
-                self._handle_profile_secret_post(payload)
-                return
-            if route == "/api/conversations":
-                conversation_id = _chat_usage_store().create_conversation()
-                self.send_json(201, {
-                    "conversation_id": conversation_id,
-                    "messages_used": 0,
-                    "message_limit": MAX_MESSAGES_PER_CONVERSATION,
-                })
+            if self._handle_post_control_route(route, payload):
                 return
             message = str(payload.get("message", "")).strip()
             if route == "/api/test-connection":
@@ -667,34 +704,58 @@ class Handler(BaseHTTPRequestHandler):
             # chat requests resolve their credential from process memory or .env.
             supplied_key = text_field("api_key") if route == "/api/test-connection" else ""
             request_start = None
+            credential_mode = _chat_usage_store().credential_mode() if route in ("/api/chat", "/api/test-connection") else None
+            if route == "/api/test-connection" and credential_mode not in (SHARED_GROQ_MODE, OWN_KEY_MODE):
+                raise ValueError("Choose how to power BraincellGPT in Settings before verifying a provider.")
+            allow_environment_key = credential_mode != OWN_KEY_MODE
+            if credential_mode == SHARED_GROQ_MODE:
+                supplied_key = ""
+                saved_key = ""
             if route == "/api/chat":
+                if credential_mode not in (SHARED_GROQ_MODE, OWN_KEY_MODE):
+                    raise ValueError("Choose how to power BraincellGPT in Settings before sending a message.")
                 conversation_id = text_field("conversation_id")
                 request_id = text_field("request_id")
                 usage_store = _chat_usage_store()
                 usage_store._validate_id(conversation_id, "conversation")
                 usage_store._validate_id(request_id, "request")
-                if usage_store.usage(conversation_id) >= MAX_MESSAGES_PER_CONVERSATION:
-                    raise MessageLimitReached
+                usage_store.usage(conversation_id)
+                if credential_mode == SHARED_GROQ_MODE:
+                    if text_field("provider", "groq").strip().lower() != "groq":
+                        raise ValueError("BrainCellGPT free access uses Groq. Choose your own provider key to use another provider.")
 
                 def reserve_chat_message() -> int:
                     nonlocal reserved_count
-                    reserved_count = usage_store.reserve_message(conversation_id, request_id)
-                    return reserved_count
+                    if credential_mode == SHARED_GROQ_MODE:
+                        reserved_count = usage_store.reserve_shared_message(conversation_id, request_id)
+                        return reserved_count
+                    usage_store.reserve_own_request(conversation_id, request_id)
+                    return 0
 
                 request_start = reserve_chat_message
+            if route == "/api/test-connection" and credential_mode == SHARED_GROQ_MODE and text_field("provider", "groq").strip().lower() != "groq":
+                raise ValueError("BrainCellGPT free access uses Groq. Choose your own provider key to use another provider.")
+            if credential_mode == OWN_KEY_MODE and route == "/api/chat":
+                saved_key = _get_profile_secret(profile_id)
+                if not saved_key and text_field("provider", "groq").strip().lower() not in ("ollama", "lmstudio"):
+                    raise ValueError("Your own provider key is not available in this server session. Open Settings and save it again.")
             reply = generate_reply(
                 message, history, text_field("personality", "normal"),
                 text_field("provider", "groq"), supplied_key or saved_key,
                 text_field("base_url"), text_field("model"), images=images,
                 on_request_start=request_start,
+                allow_environment_key=allow_environment_key,
             )
             if route == "/api/test-connection":
                 self.send_json(200, {"ok": True, "message": "Connection successful.", "provider": text_field("provider", "groq")})
+            elif credential_mode == OWN_KEY_MODE:
+                self.send_json(200, {"reply": reply, "credential_mode": OWN_KEY_MODE})
             else:
                 self.send_json(200, {
                     "reply": reply,
                     "messages_used": reserved_count,
-                    "message_limit": MAX_MESSAGES_PER_CONVERSATION,
+                    "message_limit": MAX_SHARED_MESSAGES_PER_INSTALLATION,
+                    "credential_mode": SHARED_GROQ_MODE,
                 })
         except json.JSONDecodeError:
             self.send_json(400, {"error": "Invalid JSON request."})
@@ -704,15 +765,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(409, {"error": "This message was already submitted. Check the conversation before trying again."})
         except MessageLimitReached:
             self.send_json(429, {
-                "error": "This conversation has reached its 10-message limit. Start a new conversation to continue.",
-                "messages_used": MAX_MESSAGES_PER_CONVERSATION,
-                "message_limit": MAX_MESSAGES_PER_CONVERSATION,
+                "error": "BrainCellGPT free access has used all 10 messages for this installation. Add your own provider key in Settings to continue.",
+                "messages_used": MAX_SHARED_MESSAGES_PER_INSTALLATION,
+                "message_limit": MAX_SHARED_MESSAGES_PER_INSTALLATION,
             })
         except RuntimeError as exc:
             print(f"[BrainCellGPT] chat request failed: {str(exc)[:300]}")
             response_data = {"error": str(exc)}
             if route == "/api/chat" and reserved_count is not None:
-                response_data.update({"messages_used": reserved_count, "message_limit": MAX_MESSAGES_PER_CONVERSATION})
+                response_data.update({"messages_used": reserved_count, "message_limit": MAX_SHARED_MESSAGES_PER_INSTALLATION})
             self.send_json(502, response_data)
         except ValueError as exc:
             self.send_json(400, {"error": str(exc)})
@@ -723,6 +784,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:
         if not self.require_authorization():
+            return
+        if urlparse(self.path).path == "/api/conversations":
+            if self.client_address[0] not in ("127.0.0.1", "::1") or not self.is_trusted_local_request():
+                self.send_json(403, {"error": "This local app only accepts requests from this computer."})
+                return
+            if rate_limited(self.client_address[0] + ":delete-conversation"):
+                self.send_json(429, {"error": "Too many requests. Wait a minute and try again."})
+                return
+            conversation_id = parse_qs(urlparse(self.path).query).get("id", [""])[0]
+            try:
+                _chat_usage_store().delete_conversation(conversation_id)
+            except ValueError as exc:
+                self.send_json(400, {"error": str(exc)})
+                return
+            self.send_json(200, {"deleted": True})
             return
         self.send_json(404, {"error": "Not found"})
 

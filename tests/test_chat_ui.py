@@ -64,6 +64,23 @@ class ChatInterfaceMarkupTests(unittest.TestCase):
         self.assertIn(".assistant-message-panel {\n  background: transparent;\n  border: 0;", source)
         self.assertIn(".composer-container:focus-within", source)
 
+    def test_stale_server_not_found_is_mapped_to_restart_recovery(self):
+        source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('const outdatedServerMessage = "The running BraincellGPT server is out of date.', source)
+        self.assertIn('data.error === "Conversation not found."', source)
+        self.assertIn('if (response.status === 404) throw new Error(outdatedServerMessage);', source)
+
+    def test_onboarding_and_local_conversation_storage_are_present(self):
+        source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="onboardingDialog"', source)
+        self.assertIn('id="chooseOwnKey"', source)
+        self.assertIn('id="chooseSharedKey"', source)
+        self.assertIn('indexedDB.open("braincellgpt_conversations", 1)', source)
+        self.assertIn('objectStore("conversations").put(record)', source)
+        self.assertIn('objectStore("conversations").delete(record.id)', source)
+        self.assertIn('localStorage.setItem(profileStoreKey', source)
+        self.assertIn('await saveLocalConversation(localRecord)', source)
+
 
 if __name__ == "__main__":
     unittest.main()

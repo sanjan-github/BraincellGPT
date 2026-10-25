@@ -13,20 +13,20 @@ An entertaining chatbot for curious questions, strange tangents, and conversatio
 
 BrainCellGPT is a small Python application with a browser-based chat interface. Choose a hosted model provider, connect a local Ollama or LM Studio server, or configure a compatible custom endpoint. The interface keeps the focus on chatting; it does not provide repository editing or autonomous development tools.
 
-The server uses Python's standard library and serves the included web interface directly. No frontend build step or extra database package is required; SQLite from Python stores the per-conversation message allowance locally.
+The server uses Python's standard library and serves the included web interface directly. No frontend build step or extra database package is required. SQLite stores the selected access mode and shared-key allowance on the app installation; conversation transcripts stay in browser IndexedDB.
 
 ## Features
 
 - Chat with hosted or local language models.
-- Create browser-session profiles for different providers and models.
-- Enter a provider API key in the settings panel or use a key from `.env`.
+- Save provider profiles and model settings in this browser for return visits.
+- Choose BraincellGPT's shared Groq access (10 provider attempts per local installation) or use your own provider key. The shared key remains on the server.
 - Check provider connectivity from the app.
 - Start a new conversation and copy assistant replies.
-- Send up to 10 provider requests in each conversation, with the count enforced by the local server and preserved across reloads.
-- Restore the current conversation's messages after a page refresh in the same browser tab; start a new chat to create a fresh allowance.
+- Keep chat history on this device, reopen previous conversations, continue them, and delete them.
+- Use your own saved key without BraincellGPT's shared-key allowance. Provider billing, quotas, and rate limits still apply.
 - Use a responsive, single-page interface with a playful space theme.
 
-Provider features and model availability vary. Chat replies currently return as complete responses; the chatbot interface does not stream tokens. An attempt uses one of the 10 messages when its provider request begins, including a request that later fails or times out. Requests rejected before that point do not count. The app does not automatically retry provider requests; submitting again starts a new attempt and may use another message.
+Provider features and model availability vary. Chat replies currently return as complete responses; the chatbot interface does not stream tokens. A shared-key attempt counts when its provider request begins, including a request that later fails or times out. Requests rejected before that point do not count. The app does not automatically retry provider requests; submitting again starts a new attempt and may use another message.
 
 ## Requirements
 
@@ -72,7 +72,7 @@ Start the app:
 python app.py
 ```
 
-Open [http://localhost:8000](http://localhost:8000), choose a provider under **Chat settings**, and start a conversation. Keep the server running while you chat; press `Ctrl+C` in the terminal to stop it.
+Open [http://localhost:8000](http://localhost:8000) and choose shared free access or your own provider key. To use shared access, configure `GROQ_API_KEY` in the server's `.env` file. For your own key, open **Chat settings**, select a supported provider, save the key, and use **Verify**. Keep the server running while you chat; press `Ctrl+C` in the terminal to stop it.
 
 Opening `web/index.html` directly will not work because the interface needs the local HTTP API.
 
@@ -105,9 +105,9 @@ Model IDs, capabilities, pricing, and service availability are controlled by eac
 
 - A key entered in the app is sent to the local BrainCellGPT server and kept in process memory. The cache is capped at 128 profiles and keys expire after 24 hours; stopping the app clears it.
 - `.env` keys remain on the machine running the server. Do not commit `.env` or share real credentials.
-- Provider profiles contain nonsecret settings and are stored in browser `sessionStorage`.
-- The local SQLite file `chat-usage.sqlite3` stores random conversation/request IDs and message counts only; it does not store prompts, replies, or API keys. Its location follows `BRAINCELLGPT_DATA_DIR`, or the platform's local BrainCellGPT application-data directory.
-- The 10-message allowance applies per conversation on this app installation. It is not a global spending limit for a provider API key shared with other apps or users.
+- Provider profiles contain nonsecret settings and are stored in browser `localStorage`. API key values are not stored in browser storage; keys entered in Settings are held only in server memory and must be entered again after the app stops.
+- The local SQLite file `chat-usage.sqlite3` stores random conversation/request IDs, the selected access mode, and shared-key usage; it does not store prompts, replies, or API keys. Conversation transcripts stay in this browser's IndexedDB and are not uploaded as a database. Clearing browser storage may delete them, and they do not sync to other devices. Its location follows `BRAINCELLGPT_DATA_DIR`, or the platform's local BrainCellGPT application-data directory.
+- The shared Groq allowance is 10 provider attempts per local app installation, across chats. Requests count when the provider call begins, including failed or timed-out attempts; retries are explicit and count as new attempts. This anonymous installation-level limit is not account-based and can be bypassed by someone who creates another installation or changes the local data. It does not cap provider spending. Own-key mode bypasses this BraincellGPT allowance, while provider billing, quotas, and rate limits still apply.
 - Prompts and conversation history sent to a hosted provider are subject to that provider's data handling and retention terms. Local models send requests to the configured local service.
 - The server binds to loopback by default. Do not expose it directly to an untrusted network. Remote access is an explicit advanced configuration requiring an authentication token and a trusted TLS reverse proxy; see [Security](docs/security.md).
 
