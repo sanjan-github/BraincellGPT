@@ -283,17 +283,11 @@ button:active {
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-size: var(--text-caption);
-  cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   border: 1px solid transparent;
   transition: all 140ms ease;
-}
-
-.history-item:hover {
-  background: var(--color-surface-hover);
-  color: var(--text-primary);
 }
 
 .history-item.active {
@@ -1033,20 +1027,6 @@ button:active {
   color: #fff;
 }
 
-.search-chats-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: 10px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
 .history-item {
   border-radius: var(--radius-sm);
   padding: 8px 12px;
@@ -1055,7 +1035,7 @@ button:active {
   transition: all 140ms ease;
 }
 
-.history-item:hover, .history-item.active {
+.history-item.active {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.14);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
@@ -1063,9 +1043,13 @@ button:active {
   -webkit-backdrop-filter: blur(8px);
 }
 
-.sidebar-user-pill {
-  padding: 12px 6px 0;
+.sidebar-note {
+  margin-top: auto;
+  padding: 14px 8px 2px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: #a6afbc;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 /* Glassy Top Navigation */
@@ -1119,6 +1103,17 @@ button:active {
 .chat-viewport { padding-top: 30px; }
 .chat-viewport::-webkit-scrollbar, .nav-history-wrapper::-webkit-scrollbar, .drawer-body::-webkit-scrollbar { display: none; }
 
+.chat-composer-dock {
+  display: flex;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0 24px 18px;
+}
+
+.chat-composer-dock .composer-container {
+  margin-bottom: 0;
+}
+
 .hero-title-main {
   font-size: clamp(31px, 4vw, 42px);
   font-weight: 620;
@@ -1131,6 +1126,14 @@ button:active {
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
   letter-spacing: 0.01em;
   margin-bottom: 32px;
+}
+
+.hero-invitation {
+  max-width: 32rem;
+  margin: -20px 0 0;
+  color: #d4a07e;
+  font-size: 14px;
+  letter-spacing: 0.015em;
 }
 
 /* Glass Message Composer (No Blue Gradient, Optical Frosted Surface) */
@@ -1155,6 +1158,8 @@ button:active {
   box-shadow: 
     0 20px 52px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  outline: 2px solid #d4a07e;
+  outline-offset: 3px;
 }
 
 /* Eliminate ANY white/blue outline box when clicking the textarea */
@@ -1183,8 +1188,8 @@ button:active {
 
 /* Elevated Glass Send Arrow Pill */
 .btn-submit-pill {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.92);
   color: #07090e;
@@ -1195,7 +1200,7 @@ button:active {
   margin-left: auto;
   align-self: flex-end;
   position: relative;
-  top: -12px;
+  top: -8px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.85);
   transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -1264,6 +1269,8 @@ button:active {
   .hero-title-main { font-size: 30px; }
   .chat-viewport { padding-top: 24px; }
   .composer-container { padding: 12px 14px 8px; }
+  .chat-composer-dock { padding: 0 12px 12px; }
+  .hero-invitation { margin-top: -14px; }
 }
 </style>
 </head>
@@ -1289,32 +1296,19 @@ button:active {
       <span>New Chat</span>
     </button>
 
-    <!-- Search Chats -->
-    <div class="search-chats-bar">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-      <input type="text" placeholder="Search chats..." aria-label="Search chats">
-    </div>
-
-    <!-- History List -->
+    <!-- Current Conversation -->
     <div class="nav-history-wrapper">
-      <div class="nav-section-title">Recent Chats</div>
+      <div class="nav-section-title">Current chat</div>
       <div class="history-list">
         <div class="history-item active" id="activeThreadItem">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-          <span id="activeThreadTitle">Current Session</span>
+          <span id="activeThreadTitle">New conversation</span>
         </div>
       </div>
     </div>
 
-    <!-- Sidebar Bottom User Pill -->
-    <div class="sidebar-user-pill">
-      <div class="user-profile-info">
-        <div class="user-avatar">B</div>
-        <div class="user-names">
-          <span class="user-name-primary">Braincell User</span>
-          <span class="user-name-secondary">Active Profile</span>
-        </div>
-      </div>
+    <div class="sidebar-note">
+      Chats stay in this tab. A refresh or new chat clears the conversation.
     </div>
   </aside>
 
@@ -1350,19 +1344,7 @@ button:active {
 
           <h1 class="hero-title-main">BraincellGPT</h1>
           <p class="hero-caption">One Cell, Infinite Confusion</p>
-
-          <!-- Composer Box -->
-          <div class="composer-container" id="composerCard">
-            <form id="chatForm">
-              <textarea class="composer-textarea" id="messageInput" rows="1" maxlength="12000" placeholder="Type a message or prompt..." aria-label="Message BraincellGPT"></textarea>
-              <div class="composer-bottom-bar">
-
-                <button class="btn-submit-pill" id="send" type="submit" aria-label="Send message">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
-                </button>
-              </div>
-            </form>
-          </div>
+          <p class="hero-invitation">Bring a thought. Leave with three stranger ones.</p>
         </div>
 
         <!-- Chat Stream -->
@@ -1374,6 +1356,19 @@ button:active {
         </div>
       </div>
     </section>
+
+    <div class="chat-composer-dock">
+      <div class="composer-container" id="composerCard">
+        <form id="chatForm">
+          <textarea class="composer-textarea" id="messageInput" rows="1" maxlength="12000" placeholder="Say something delightfully ridiculous…" aria-label="Message BraincellGPT"></textarea>
+          <div class="composer-bottom-bar">
+            <button class="btn-submit-pill" id="send" type="submit" aria-label="Send message">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -1381,7 +1376,7 @@ button:active {
 <div class="drawer-overlay" id="drawerOverlay" aria-hidden="true"></div>
 <aside class="drawer-panel" id="settingsDrawer" aria-labelledby="settingsTitle" aria-hidden="true">
   <div class="drawer-head">
-    <h2 class="drawer-title" id="settingsTitle">Model & Credentials</h2>
+    <h2 class="drawer-title" id="settingsTitle">Chat settings</h2>
     <button class="icon-btn-pill" id="closeSettings" aria-label="Close settings">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
     </button>
@@ -1403,7 +1398,7 @@ button:active {
       <label class="form-label" for="providerSelect">Provider</label>
       <select class="form-field" id="providerSelect">
         <option value="groq">Groq (Ultra-fast Llama 3.3)</option>
-        <option value="openai">OpenAI (GPT-4o mini)</option>
+        <option value="openai">OpenAI</option>
         <option value="azure_openai">Azure OpenAI</option>
         <option value="gemini">Google Gemini</option>
         <option value="anthropic">Anthropic Claude</option>
@@ -1422,7 +1417,7 @@ button:active {
     </div>
 
     <div class="form-group">
-      <label class="form-label" for="apiKey">API Key</label>
+      <label class="form-label" for="apiKey">Provider API key</label>
       <input class="form-field" id="apiKey" type="password" autocomplete="new-password" placeholder="Enter an API key" aria-label="Provider API key">
       <div class="form-actions">
         <button class="btn-secondary" id="saveApiKey" type="button">Save</button>
@@ -1566,9 +1561,9 @@ button:active {
   }
 
   function updateModelBadge() {
-    const providerLabel = providerSelect.options[providerSelect.selectedIndex]?.text.split(" ")[0] || "Groq";
+    const providerLabel = providerSelect.options[providerSelect.selectedIndex]?.text.split(" (")[0] || "Groq";
     const customModel = modelNameInput.value.trim();
-    const display = customModel ? `${providerLabel} · ${customModel}` : `${providerLabel} · Llama 3.3`;
+    const display = customModel ? `${providerLabel} ? ${customModel}` : providerLabel;
     currentModelDisplay.textContent = display;
   }
 
@@ -1814,7 +1809,7 @@ button:active {
     messagesEl.replaceChildren();
     errorEl.hidden = true;
     welcome.style.display = "flex";
-    activeThreadTitle.textContent = "Current Session";
+    activeThreadTitle.textContent = "New conversation";
     input.focus();
   });
 })();

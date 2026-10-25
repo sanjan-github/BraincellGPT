@@ -1,21 +1,25 @@
-# Security checklist
+# Security guidance
 
-Before public deployment:
+BrainCellGPT is intended to run on the same computer as its user. The default bind address is `127.0.0.1`; keep that default for ordinary use.
 
-- Add authentication and per-user authorization to every conversation and memory operation.
-- Store conversation history server-side; never trust the client as the source of truth.
-- Add rate limiting and request-size limits at the edge and application layers.
-- Keep saved model-provider keys in server process memory; never persist or return them. Profile keys are capped at 128 and expire after 24 hours.
-- Rotate any credentials that were exposed. Profile keys are cleared when the app stops.
-- Avoid logging prompts, secrets, or personal data by default.
-- Add deletion and export controls for user data.
-- Treat model output and tool arguments as untrusted input.
-- Restrict tools to an allow-list and validate structured arguments before execution.
-- Add timeouts, retry limits, and cost budgets for model calls. Agent tasks currently cap runtime, tool calls, output, file scans, and file reads.
-- Configure production CORS to exact trusted origins.
-- Remote binding is disabled by default. Before enabling it, configure
-  `BRAINCELLGPT_ALLOW_REMOTE=1`, a 32-character random
-  `BRAINCELLGPT_REMOTE_AUTH_TOKEN`, and an HTTPS
-  `BRAINCELLGPT_PUBLIC_ORIGIN`; bind only behind a TLS reverse proxy that
-  connects to the app over loopback. The proxy hostname is restricted and every
-  request requires the token using Bearer or browser Basic authentication.
+## Provider credentials
+
+- Never commit `.env` or paste a real credential into source code or an issue.
+- Keys entered in **Chat settings** are sent to the local server and held in a bounded process-memory cache. The cache holds up to 128 profiles, expires keys after 24 hours, and is cleared when the server stops.
+- The server does not return saved profile keys to the browser. The browser stores provider profile metadata in `sessionStorage`; API key values are not stored there.
+- Keys in `.env` remain available to the server process. Protect the file and machine with the same care as the provider account.
+- A hosted provider receives the submitted prompt and conversation history. Review that provider's privacy, retention, and training policies. Local Ollama and LM Studio requests go to the configured local service.
+
+## Local HTTP protections
+
+The app checks Host and Origin values, rejects untrusted browser origins, applies request-size and per-client rate limits, and sets security-related response headers. Its loopback HTTP connection is local plaintext; machine-local software with access to that connection can potentially inspect submitted data.
+
+Do not forward port `8000` to the public internet, expose the server directly on a network, or treat loopback binding as user authentication.
+
+## Advanced remote access
+
+Remote binding is disabled unless explicitly enabled. The application requires `BRAINCELLGPT_ALLOW_REMOTE=1`, a `BRAINCELLGPT_REMOTE_AUTH_TOKEN` of at least 32 characters, and a bare HTTPS `BRAINCELLGPT_PUBLIC_ORIGIN`. The server validates the configured host and origin and accepts the token through Bearer authorization or Basic authentication (username `braincell`).
+
+The Python app itself serves HTTP. Remote use therefore depends on a trusted TLS reverse proxy that terminates HTTPS and connects to the app over a protected interface. Keep the backend port inaccessible from untrusted networks, use a randomly generated token, and do not log authorization headers or request bodies at the proxy. The application does not provide user accounts or per-user isolation.
+
+The app's security checks reduce common risks but do not constitute an independent deployment security assessment. The test suite uses mocks for provider calls and does not verify live service behavior.

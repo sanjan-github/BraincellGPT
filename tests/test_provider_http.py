@@ -76,7 +76,7 @@ class PinnedHttpsConnectionTests(unittest.TestCase):
             )
             provider_http.open_provider_request(explicit_request, timeout=4)
 
-        self.assertEqual(default_request.get_header("User-agent"), "BrainCellGPT/0.1")
+        self.assertEqual(default_request.get_header("User-agent"), "BrainCellGPT/1.0.0")
         self.assertEqual(explicit_request.get_header("User-agent"), "Provider SDK/1.0")
 
     def test_connects_to_pinned_ip_without_dns_and_keeps_hostname_for_tls(self):

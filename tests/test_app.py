@@ -374,12 +374,11 @@ class LocalRequestBoundaryTests(unittest.TestCase):
             with self.subTest(headers=dict(handler.headers)):
                 self.assertFalse(handler.is_trusted_local_request())
 
-    def test_oauth_callback_allows_cross_site_redirect_but_keeps_host_guard(self):
+    def test_cross_site_requests_have_no_oauth_callback_exception(self):
         handler = self.make_handler(fetch_site="cross-site")
         self.assertFalse(handler.is_trusted_local_request())
-        self.assertTrue(handler.is_trusted_local_request(allow_cross_site_redirect=True))
         handler = self.make_handler(host="evil.example:8000", fetch_site="cross-site")
-        self.assertFalse(handler.is_trusted_local_request(allow_cross_site_redirect=True))
+        self.assertFalse(handler.is_trusted_local_request())
 
     def test_rejects_malformed_host(self):
         self.assertFalse(self.make_handler(host="localhost:not-a-port").is_trusted_local_request())

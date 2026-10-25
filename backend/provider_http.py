@@ -11,11 +11,11 @@ from threading import BoundedSemaphore
 from typing import Any
 
 
-# One process-wide cap shared by chat and coding-agent provider requests.
+# One process-wide cap shared by outbound provider requests.
 MAX_CONCURRENT_PROVIDER_REQUESTS = 8
 PROVIDER_SLOTS = BoundedSemaphore(MAX_CONCURRENT_PROVIDER_REQUESTS)
 MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
-DEFAULT_USER_AGENT = "BrainCellGPT/0.1"
+DEFAULT_USER_AGENT = "BrainCellGPT/1.0.0"
 
 
 class ProviderResponseTooLarge(ValueError):

@@ -1,5 +1,19 @@
 # Backend completion progress
 
+## BrainCellGPT 1.0 chatbot preparation (2026-10-25)
+
+- Status: IN PROGRESS. This product-scope work is separate from the completed backend stabilization record below.
+- Baseline: branch `main`, HEAD `01ee2acfce93af6ba16847b6e1754574bcfffdb3`, matching `origin/main`; working tree was clean before this work. Current changes are all uncommitted and limited to the chatbot UI/API surface, tests, release documentation, and progress record.
+- Product audit confirmed the app is a local browser chatbot with provider profiles, credential handling, provider selection, and temporary browser history. `app.py` also exposed coding-agent sessions, streaming, approval, restore, MCP OAuth callback, and MCP disconnect routes that the chat UI did not use.
+- Defect UI-001 — `web/index.html`, `renderMessage()`: the only message form was nested inside `#welcome`, which is hidden after the first message. Reproduction: submit a message and inspect the DOM; the form becomes hidden with the welcome panel. Fix: moved the composer to a persistent dock outside the welcome panel. Regression: `tests/test_chat_ui.py::ChatInterfaceMarkupTests.test_message_composer_is_outside_hidable_welcome_stage`. Focused verification: passed.
+- Product boundary API-001 — `app.py`, HTTP route dispatch: agent and MCP OAuth routes were part of the product's public HTTP surface without any corresponding chatbot UI. Fix: removed those route handlers and route dispatch while retaining the backend modules and their direct tests. Regression: `tests/test_request_security.py::RequestSecurityIntegrationTests.test_chatbot_http_surface_does_not_expose_coding_agent_or_mcp_oauth` asserts 404 for the former route set. Focused verification: passed.
+- UI-002 — provider badge used a Groq model label for every provider with no explicit model. Fix: display a configured model only when selected; otherwise show provider name.
+- Documentation/version: README, architecture, security, and changelog now describe the chatbot, temporary browser history, non-streaming chat, and current credential handling. Removed the user-facing Roo Code parity document. App and provider user-agent versions are 1.0.0. No release tag or publication has been made.
+- Verification to date: `python -m unittest tests.test_chat_ui tests.test_request_security -q` passed (6 tests). The first full run found the stale provider user-agent assertion (`0.1` vs bumped `1.0.0`); the test expectation was updated. A subsequent full run found a test for the removed OAuth cross-site exception; the obsolete exception and its exemption test were removed/replaced with a rejection assertion.
+- Final local checks on Python 3.14.6: `python -m unittest discover -s tests -q` passed (174 run, 8 skipped); `python -m pytest -q` passed (166 passed, 8 skipped); `python -m compileall -q app.py backend tests scripts` passed; `python scripts/smoke_clean_install.py` passed; `uvx --from pyright pyright --pythonversion 3.11 app.py backend tests` reported 0 diagnostics; `git diff --check` passed. The CI-matching secret regex scan had no matches (exit code 1 is `git grep`'s no-match status). Live provider/model/MCP/OAuth checks were skipped because live credentials/endpoints were not configured; macOS Keychain and Linux Secret Service integration checks were skipped on Windows.
+- CI: no new run yet. Latest relevant baseline is prior backend run `40175276320` for commit `6a53ed75cb6c7afe37ef6cb2de8189dc01252da2`; it passed six application jobs but does not verify these current changes.
+- Remaining actions: stage and inspect the final intended diff, run the tracked-file secret scan, commit and push the release preparation on `main`, inspect the fresh CI jobs, and record their exact results. No release tag or publication has been made.
+
 ## Baseline
 
 - Status: VERIFIED (local verification and fresh CI passed; see documented limitations)
