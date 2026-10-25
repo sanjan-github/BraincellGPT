@@ -775,6 +775,13 @@ button:active {
   gap: var(--space-2);
 }
 
+.error-banner[hidden],
+.form-group[hidden],
+.own-key-settings[hidden],
+[hidden] {
+  display: none !important;
+}
+
 .error-mark {
   font-weight: 600;
   font-size: var(--text-caption);
@@ -815,12 +822,16 @@ button:active {
   display: flex;
   flex-direction: column;
   transform: translateX(100%);
-  transition: transform 260ms var(--ease-drawer);
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 260ms var(--ease-drawer), visibility 260ms;
   z-index: 101;
 }
 
 .drawer-panel.open {
   transform: translateX(0);
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .drawer-head {
@@ -965,6 +976,27 @@ button:active {
 .form-field:focus {
   background: rgba(255, 255, 255, 0.1);
   outline: none;
+}
+
+.form-field:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+select.form-field {
+  cursor: pointer;
+}
+
+select.form-field option {
+  background: #11151f;
+  color: #ffffff;
+}
+
+.own-key-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 .form-actions {
@@ -1268,59 +1300,61 @@ dialog#onboardingDialog::backdrop {
       </select>
       <div class="form-status">Your provider may apply its own charges, quotas, or rate limits. Your key stays in server memory and is cleared when the app stops.</div>
     </div>
-    <div class="form-group">
-      <label class="form-label" for="profileSelect">Provider profile</label>
-      <div class="form-actions profile-actions">
-        <select class="form-field" id="profileSelect" aria-label="Provider profile"></select>
-        <button class="btn-secondary" id="addProfile" type="button" aria-label="Add new profile">＋</button>
-        <button class="btn-secondary" id="deleteProfile" type="button">Delete</button>
+    <div id="ownKeySettings" class="own-key-settings" hidden>
+      <div class="form-group">
+        <label class="form-label" for="profileSelect">Provider profile</label>
+        <div class="form-actions profile-actions">
+          <select class="form-field" id="profileSelect" aria-label="Provider profile"></select>
+          <button class="btn-secondary" id="addProfile" type="button" aria-label="Add new profile">＋</button>
+          <button class="btn-secondary" id="deleteProfile" type="button">Delete</button>
+        </div>
       </div>
-    </div>
-    <div class="form-group">
-      <label class="form-label" for="profileName">Profile name</label>
-      <input class="form-field" id="profileName" type="text" maxlength="64" autocomplete="off" placeholder="My provider profile">
-    </div>
-    <div class="form-group">
-      <label class="form-label" for="providerSelect">Provider</label>
-      <select class="form-field" id="providerSelect">
-        <option value="groq">Groq (Ultra-fast Llama 3.3)</option>
-        <option value="openai">OpenAI</option>
-        <option value="azure_openai">Azure OpenAI</option>
-        <option value="gemini">Google Gemini</option>
-        <option value="anthropic">Anthropic Claude</option>
-        <option value="openrouter">OpenRouter</option>
-        <option value="nvidia_nim">NVIDIA NIM</option>
-        <option value="deepseek">DeepSeek</option>
-        <option value="mistral">Mistral AI</option>
-        <option value="xai">xAI (Grok)</option>
-        <option value="together">Together AI</option>
-        <option value="fireworks">Fireworks AI</option>
-        <option value="cerebras">Cerebras</option>
-        <option value="ollama">Ollama (Local)</option>
-        <option value="lmstudio">LM Studio (Local)</option>
-        <option value="custom">Custom OpenAI Endpoint</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label" for="apiKey">Provider API key</label>
-      <input class="form-field" id="apiKey" type="password" autocomplete="new-password" placeholder="Enter an API key" aria-label="Provider API key">
-      <div class="form-actions">
-        <button class="btn-secondary" id="saveApiKey" type="button">Save</button>
-        <button class="btn-secondary" id="clearApiKey" type="button">Clear</button>
-        <button class="btn-secondary" id="testConnection" type="button">Verify</button>
+      <div class="form-group">
+        <label class="form-label" for="profileName">Profile name</label>
+        <input class="form-field" id="profileName" type="text" maxlength="64" autocomplete="off" placeholder="My provider profile">
       </div>
-      <div class="form-status" id="apiKeyStatus" role="status">Keys are kept in server memory and cleared when the app stops.</div>
-    </div>
+      <div class="form-group">
+        <label class="form-label" for="providerSelect">Provider</label>
+        <select class="form-field" id="providerSelect">
+          <option value="groq">Groq (Ultra-fast Llama 3.3)</option>
+          <option value="openai">OpenAI</option>
+          <option value="azure_openai">Azure OpenAI</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="anthropic">Anthropic Claude</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="nvidia_nim">NVIDIA NIM</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="mistral">Mistral AI</option>
+          <option value="xai">xAI (Grok)</option>
+          <option value="together">Together AI</option>
+          <option value="fireworks">Fireworks AI</option>
+          <option value="cerebras">Cerebras</option>
+          <option value="ollama">Ollama (Local)</option>
+          <option value="lmstudio">LM Studio (Local)</option>
+          <option value="custom">Custom OpenAI Endpoint</option>
+        </select>
+      </div>
 
-    <div class="form-group" id="customFields" hidden>
-      <label class="form-label" for="baseUrl" id="baseUrlLabel">Endpoint URL</label>
-      <input class="form-field" id="baseUrl" type="url" placeholder="https://api.example.com/v1">
-    </div>
+      <div class="form-group">
+        <label class="form-label" for="apiKey">Provider API key</label>
+        <input class="form-field" id="apiKey" type="password" autocomplete="new-password" placeholder="Enter an API key" aria-label="Provider API key">
+        <div class="form-actions">
+          <button class="btn-secondary" id="saveApiKey" type="button">Save</button>
+          <button class="btn-secondary" id="clearApiKey" type="button">Clear</button>
+          <button class="btn-secondary" id="testConnection" type="button">Verify</button>
+        </div>
+        <div class="form-status" id="apiKeyStatus" role="status">Keys are kept in server memory and cleared when the app stops.</div>
+      </div>
 
-    <div class="form-group">
-      <label class="form-label" for="modelName">Model ID</label>
-      <input class="form-field" id="modelName" type="text" placeholder="Provider default or specific model ID">
+      <div class="form-group" id="customFields" hidden>
+        <label class="form-label" for="baseUrl" id="baseUrlLabel">Endpoint URL</label>
+        <input class="form-field" id="baseUrl" type="url" placeholder="https://api.example.com/v1">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="modelName">Model ID</label>
+        <input class="form-field" id="modelName" type="text" placeholder="Provider default or specific model ID">
+      </div>
     </div>
   </div>
 </aside>
@@ -1500,6 +1534,10 @@ dialog#onboardingDialog::backdrop {
     if (badgeEl) {
       badgeEl.textContent = statusText;
       badgeEl.dataset.status = statusState;
+    }
+    const ownKeySettings = document.querySelector("#ownKeySettings");
+    if (ownKeySettings) {
+      ownKeySettings.hidden = credentialMode !== "own_key";
     }
   }
 
