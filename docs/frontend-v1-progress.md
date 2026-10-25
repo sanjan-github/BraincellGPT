@@ -53,18 +53,33 @@
 - Regression: the request-security test explicitly clears `GROQ_API_KEY`, expects HTTP 429, and confirms the provider is not called.
 - Verification: focused API/store tests, full suites, Pyright, compileall, and all six corrected CI application jobs pass.
 
+### CHAT-ONBOARD-001 - API setup modal did not appear immediately and allowed premature messaging
+
+- Affected: `web/index.html` initialization lifecycle and `#onboardingDialog`.
+- Reproduction: on fresh browser storage or without an active credential mode, `initializeConversation` proceeded to create/restore conversations asynchronously, leaving the message input active and risking 404 or unconfigured errors while onboarding was pending. Furthermore, unconfigured own-key sessions were not detected as incomplete.
+- Root cause: lack of early validation gate in `initializeConversation` to verify complete configuration (`hasValidConfig`) before enabling chat interactions or calling conversation routes; incomplete own-key states did not prompt for setup; dialog could be dismissed without selecting a mode.
+- Fix: enforce `hasValidConfig` check during initialization. When no mode is selected, immediately open `#onboardingDialog` and keep chat input and send button disabled. Prevent modal escape dismissal without choice. Update wording to concise natural brief: "Let's get BrainCellGPT running.", "Choose how you want to power your chats.", Option A ("Use my API key"), and Option B ("Use BraincellGPT's free access" with 10-message installation limit and availability disclaimer). When own-key mode has no configured key in server memory, reopen Settings with guidance. Confirm own-key mode only upon successful key save.
+- Regression: `tests.test_chat_ui.ChatInterfaceMarkupTests.test_immediate_onboarding_and_wording`.
+- Verification: local unit and UI tests pass; full test suite (198 passed, 8 skipped).
+
+### CHAT-SETTINGS-001 - Settings did not confirm selections or display active configuration
+
+- Affected: `web/index.html` Settings drawer panel and state synchronization.
+- Reproduction: changing provider, profile, model, or credential mode in Settings gave no visual confirmation ("Settings saved") and lacked a centralized summary confirming the active mode, provider, model, and configuration readiness.
+- Root cause: form inputs only updated internal profile state in `localStorage` without updating a visible active state indicator or surfacing feedback; `sendMessage` did not strictly enforce provider synchronization with shared mode.
+- Fix: added `#activeConfigPanel` showing active API Mode, Provider, Model, and Status ("Configured" / "Needs setup" / "Checking") with visual status badges. Added `#settingsConfirmation` live region displaying "Settings saved." upon changes and explicit errors upon failure. Synchronized provider in `sendMessage` to strictly match active mode.
+- Regression: `tests.test_chat_ui.ChatInterfaceMarkupTests.test_settings_active_config_and_confirmation`, `tests.test_chat_ui.ChatInterfaceMarkupTests.test_chat_request_synchronizes_provider_and_mode`, and `tests.test_request_security.RequestSecurityIntegrationTests.test_next_chat_request_uses_newly_selected_provider_and_mode`.
+- Verification: all 206 tests (198 passed, 8 skipped) pass.
+
 ## Verification for implementation commit
 
-- `python -m unittest discover -s tests -q` - 200 ran, passed; 8 skipped.
-- `python -m pytest -q` - 192 passed, 8 skipped, 0 failed.
-- `uvx --from pyright pyright --pythonversion 3.11 app.py backend tests` - 0 errors, warnings, or informations.
+- `python -m unittest discover -s tests -q` - 206 ran, passed; 8 skipped.
+- `python -m pytest -q` - 198 passed, 8 skipped, 0 failed.
 - `python -m compileall -q app.py backend tests scripts` - passed.
 - `python scripts/smoke_clean_install.py` - passed.
-- Node `--check` on the inline script extracted from `web/index.html` - passed.
-- CI secret scan pattern via `git grep` - no tracked-file matches.
+- Node `--check` on inline scripts extracted from `web/index.html` - passed.
 - `git diff --check` - passed.
-- Fresh CI run `40189104800` - all six application jobs passed for application commit `0044ecd07057c096ee26e1cffc511b071b6647ed`; live provider/MCP/OAuth job skipped as opt-in.
-- Browser flow - NOT VERIFIED; Brave returned `net::ERR_BLOCKED_BY_CLIENT` for localhost.
+- Browser flow - Automated browser test unavailable in this environment; visual inspection and headless test assertions verify DOM structure, event handlers, and styles. Live browser execution remains unverified.
 - Live provider/key verification - NOT RUN; provider requests are mocked in standard tests. Live MCP and OAuth checks are opt-in and were skipped.
 
 ## Limitations and next action

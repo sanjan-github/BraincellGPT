@@ -81,6 +81,33 @@ class ChatInterfaceMarkupTests(unittest.TestCase):
         self.assertIn('localStorage.setItem(profileStoreKey', source)
         self.assertIn('await saveLocalConversation(localRecord)', source)
 
+    def test_immediate_onboarding_and_wording(self):
+        source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Let's get BrainCellGPT running.", source)
+        self.assertIn("Choose how you want to power your chats.", source)
+        self.assertIn("Use my API key", source)
+        self.assertIn("Use BraincellGPT's free access", source)
+        self.assertIn("Limit of 10 accepted message attempts per installation", source)
+        self.assertIn("hasValidConfig", source)
+        self.assertIn("onboardingDialog.showModal", source)
+        self.assertIn("onboardingDialog.addEventListener", source)
+
+    def test_settings_active_config_and_confirmation(self):
+        source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="activeConfigPanel"', source)
+        self.assertIn('id="activeConfigMode"', source)
+        self.assertIn('id="activeConfigProvider"', source)
+        self.assertIn('id="activeConfigModel"', source)
+        self.assertIn('id="activeConfigStatusText"', source)
+        self.assertIn('id="activeConfigBadge"', source)
+        self.assertIn('id="settingsConfirmation"', source)
+        self.assertIn('showSettingsConfirmation("Settings saved.', source)
+
+    def test_chat_request_synchronizes_provider_and_mode(self):
+        source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('provider: credentialMode === "shared_groq" ? "groq" : providerSelect.value', source)
+        self.assertIn('apiKeyInput.value = "";', source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@
    Design Tokens — Apple SF Pro, Clean Pure UI Architecture
    ========================================================================== */
 :root {
-  --font-family: "SF Pro Display", "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
 
   /* Fibonacci Spacing */
   --space-1: 5px;
@@ -37,7 +37,7 @@
   --radius-lg: 20px;
   --radius-pill: 9999px;
 
-  /* Clean Space Palette — No AI-Slop Borders or Gradients */
+  /* Clean Dark Space Palette — Pure Minimal Surfaces */
   --color-base: #06080d;
   --color-sidebar: #090c13;
   --color-surface: rgba(255, 255, 255, 0.06);
@@ -211,6 +211,11 @@ button:active {
 .btn-new-chat:hover {
   background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
+}
+
+.btn-new-chat:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* Nav Session History */
@@ -803,7 +808,7 @@ button:active {
   right: 0;
   bottom: 0;
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   background: #0d1117;
   border: none;
   box-shadow: -12px 0 36px rgba(0, 0, 0, 0.5);
@@ -844,6 +849,92 @@ button:active {
 
 .drawer-body::-webkit-scrollbar {
   display: none;
+}
+
+/* Active Configuration Panel */
+.active-config-panel {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.active-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.active-config-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+.active-config-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.active-config-badge[data-status="configured"] {
+  background: rgba(52, 199, 89, 0.15);
+  color: #34c759;
+}
+
+.active-config-badge[data-status="needs_setup"] {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.active-config-badge[data-status="checking"] {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+.active-config-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.active-config-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.active-config-label {
+  color: var(--text-tertiary);
+}
+
+.active-config-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.settings-confirmation {
+  font-size: 12px;
+  font-weight: 500;
+  min-height: 18px;
+  color: #34c759;
+  line-height: 1.4;
+}
+
+.settings-confirmation[data-state="error"] {
+  color: #ff5a5f;
+}
+
+.settings-confirmation[data-state="checking"] {
+  color: #f59e0b;
 }
 
 .form-group {
@@ -926,13 +1017,14 @@ button:active {
 
 /* Dialog */
 dialog#onboardingDialog {
-  width: min(440px, calc(100vw - 32px));
+  width: min(460px, calc(100vw - 32px));
   border: none;
   border-radius: 16px;
   padding: 24px;
   color: #f5f6f8;
   background: #11151f;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+  margin: auto;
 }
 
 dialog#onboardingDialog::backdrop {
@@ -940,26 +1032,62 @@ dialog#onboardingDialog::backdrop {
   backdrop-filter: blur(5px);
 }
 
+#onboardingTitle {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+
+#onboardingDesc {
+  font-size: 13.5px;
+  color: #8f99a8;
+  line-height: 1.5;
+}
+
 .onboarding-actions {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .onboarding-actions button {
-  min-height: 44px;
+  min-height: 54px;
   border: none;
-  border-radius: 8px;
-  padding: 10px 14px;
+  border-radius: 10px;
+  padding: 12px 14px;
   color: inherit;
   background: rgba(255, 255, 255, 0.08);
   text-align: left;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   transition: background-color 140ms ease;
 }
 
 .onboarding-actions button:hover {
   background: rgba(255, 255, 255, 0.14);
+}
+
+.onboarding-actions .action-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.onboarding-actions .action-desc {
+  font-size: 12px;
+  color: #8f99a8;
+  line-height: 1.4;
+}
+
+#onboardingStatus {
+  font-size: 12px;
+  color: #ff5a5f;
+  margin-top: 12px;
+  min-height: 16px;
 }
 
 /* Responsive */
@@ -1105,6 +1233,32 @@ dialog#onboardingDialog::backdrop {
     </button>
   </div>
   <div class="drawer-body">
+    <!-- Active configuration confirmation & indicator -->
+    <div class="active-config-panel" id="activeConfigPanel">
+      <div class="active-config-header">
+        <span class="active-config-heading">Active configuration</span>
+        <span class="active-config-badge" id="activeConfigBadge" data-status="needs_setup">Needs setup</span>
+      </div>
+      <div class="active-config-grid">
+        <div class="active-config-row">
+          <span class="active-config-label">Mode:</span>
+          <span class="active-config-value" id="activeConfigMode">Not selected</span>
+        </div>
+        <div class="active-config-row" id="activeConfigProviderRow">
+          <span class="active-config-label">Provider:</span>
+          <span class="active-config-value" id="activeConfigProvider">Groq</span>
+        </div>
+        <div class="active-config-row" id="activeConfigModelRow">
+          <span class="active-config-label">Model:</span>
+          <span class="active-config-value" id="activeConfigModel">Default</span>
+        </div>
+        <div class="active-config-row">
+          <span class="active-config-label">Status:</span>
+          <span class="active-config-value" id="activeConfigStatusText">Needs setup</span>
+        </div>
+      </div>
+      <div class="settings-confirmation" id="settingsConfirmation" role="status" aria-live="polite"></div>
+    </div>
     <div class="form-group">
       <label class="form-label" for="credentialMode">Power BraincellGPT</label>
       <select class="form-field" id="credentialMode">
@@ -1172,11 +1326,17 @@ dialog#onboardingDialog::backdrop {
 </aside>
 
 <dialog id="onboardingDialog" aria-labelledby="onboardingTitle">
-  <h2 id="onboardingTitle">How would you like to power BraincellGPT?</h2>
-  <p>Use your own provider key to avoid BraincellGPT's shared-key allowance. Your provider may still charge you or apply its own limits.</p>
+  <h2 id="onboardingTitle">Let's get BrainCellGPT running.</h2>
+  <p id="onboardingDesc">Choose how you want to power your chats.</p>
   <div class="onboarding-actions">
-    <button type="button" id="chooseOwnKey">Use my own API key</button>
-    <button type="button" id="chooseSharedKey">Use BraincellGPT's free access</button>
+    <button type="button" id="chooseOwnKey">
+      <span class="action-title">Use my API key</span>
+      <span class="action-desc">Use your own supported provider and API key.</span>
+    </button>
+    <button type="button" id="chooseSharedKey">
+      <span class="action-title">Use BraincellGPT's free access</span>
+      <span class="action-desc">Use the shared Groq key. Limit of 10 accepted message attempts per installation; shared allowance is not a guarantee of unlimited availability.</span>
+    </button>
   </div>
   <p id="onboardingStatus" role="status"></p>
 </dialog>
@@ -1222,6 +1382,19 @@ dialog#onboardingDialog::backdrop {
   const onboardingStatus = document.querySelector("#onboardingStatus");
   const conversationList = document.querySelector("#conversationList");
 
+  // Chat Execution State
+  let history = [];
+  let busy = false;
+  let conversationId = "";
+  let messagesUsed = 0;
+  let conversationReady = false;
+  let conversationSetupPending = true;
+  let ownKeyReady = false;
+  let credentialMode = null;
+  const MESSAGE_LIMIT = 10;
+  const conversationIdKey = "braincellgpt_active_conversation_v1";
+  const outdatedServerMessage = "The running BraincellGPT server is out of date. Stop it, run `python app.py`, then reload this page.";
+
   // Reliable Sidebar Collapse & Restore for Desktop and Mobile
   function toggleSidebar() {
     if (window.innerWidth <= 768) {
@@ -1230,11 +1403,8 @@ dialog#onboardingDialog::backdrop {
     } else {
       appSidebar.classList.toggle("collapsed");
     }
-    const expanded = appSidebar.classList.contains("mobile-open") || !appSidebar.classList.contains("collapsed");
-    sidebarToggleBtn.setAttribute("aria-expanded", String(expanded));
   }
 
-  sidebarToggleBtn.setAttribute("aria-expanded", "true");
   sidebarToggleBtn.addEventListener("click", toggleSidebar);
   sidebarOverlay.addEventListener("click", toggleSidebar);
 
@@ -1242,14 +1412,11 @@ dialog#onboardingDialog::backdrop {
   function openDrawer() {
     settingsDrawer.classList.add("open");
     drawerOverlay.classList.add("open");
-    settingsDrawer.setAttribute("aria-hidden", "false");
   }
 
   function closeDrawer() {
     settingsDrawer.classList.remove("open");
     drawerOverlay.classList.remove("open");
-    settingsDrawer.setAttribute("aria-hidden", "true");
-    openSettingsTop.focus();
   }
 
   [openSettingsTop, topbarModelBadge].forEach(btn => {
@@ -1264,9 +1431,79 @@ dialog#onboardingDialog::backdrop {
     }
   });
 
+  // Settings Confirmation Feedback
+  let settingsConfirmTimer = null;
+  function showSettingsConfirmation(message, state = "success") {
+    const el = document.querySelector("#settingsConfirmation");
+    if (!el) return;
+    el.textContent = message;
+    el.dataset.state = state;
+    if (settingsConfirmTimer) clearTimeout(settingsConfirmTimer);
+    if (state === "success") {
+      settingsConfirmTimer = setTimeout(() => {
+        if (el && el.dataset.state === "success") {
+          el.textContent = "";
+          el.dataset.state = "";
+        }
+      }, 4000);
+    }
+  }
+
+  // Active Configuration Display
+  function updateActiveConfigDisplay() {
+    const modeEl = document.querySelector("#activeConfigMode");
+    const providerEl = document.querySelector("#activeConfigProvider");
+    const modelEl = document.querySelector("#activeConfigModel");
+    const statusTextEl = document.querySelector("#activeConfigStatusText");
+    const badgeEl = document.querySelector("#activeConfigBadge");
+
+    if (!modeEl) return;
+
+    let modeText = "Not selected";
+    let statusText = "Needs setup";
+    let statusState = "needs_setup";
+
+    if (credentialMode === "shared_groq") {
+      modeText = "BrainCellGPT free access";
+      if (providerEl) providerEl.textContent = "Groq";
+      if (modelEl) modelEl.textContent = "Llama 3.3 (default)";
+      if (messagesUsed >= MESSAGE_LIMIT) {
+        statusText = "Allowance reached";
+        statusState = "needs_setup";
+      } else {
+        statusText = "Configured";
+        statusState = "configured";
+      }
+    } else if (credentialMode === "own_key") {
+      modeText = "My API key";
+      const p = activeProfile();
+      const pLabel = providerSelect.options[providerSelect.selectedIndex]?.text.split(" (")[0] || p.provider;
+      if (providerEl) providerEl.textContent = pLabel;
+      if (modelEl) modelEl.textContent = p.model ? p.model : "Provider default";
+      if (ownKeyReady) {
+        statusText = "Configured";
+        statusState = "configured";
+      } else {
+        statusText = "Needs setup";
+        statusState = "needs_setup";
+      }
+    } else {
+      modeText = "Not selected";
+      if (providerEl) providerEl.textContent = "—";
+      if (modelEl) modelEl.textContent = "—";
+      statusText = "Needs setup";
+      statusState = "needs_setup";
+    }
+
+    modeEl.textContent = modeText;
+    if (statusTextEl) statusTextEl.textContent = statusText;
+    if (badgeEl) {
+      badgeEl.textContent = statusText;
+      badgeEl.dataset.status = statusState;
+    }
+  }
+
   // Profile Management
-  let ownKeyReady = false;
-  let credentialMode = null;
   const profileStoreKey = "braincellgpt_profiles_v1";
   const supportedProviders = new Set([...providerSelect.options].map(option => option.value));
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/-/g, "");
@@ -1303,14 +1540,16 @@ dialog#onboardingDialog::backdrop {
     apiKeyStatus.dataset.state = "";
     if (credentialMode === "shared_groq") {
       ownKeyReady = false;
-      apiKeyStatus.textContent = "Shared Groq access uses the server key; profile keys are not used.";
+      apiKeyStatus.textContent = "Shared Groq access uses the application's shared key; personal profile keys are not used.";
       updateMessageCounter();
+      updateActiveConfigDisplay();
       return;
     }
     if (["ollama", "lmstudio"].includes(activeProfile().provider)) {
       ownKeyReady = true;
       apiKeyStatus.textContent = activeProfile().provider === "ollama" ? "Ollama local server." : "LM Studio local server.";
-      queueMicrotask(updateMessageCounter);
+      updateMessageCounter();
+      updateActiveConfigDisplay();
       return;
     }
     try {
@@ -1318,23 +1557,24 @@ dialog#onboardingDialog::backdrop {
       const data = await response.json();
       ownKeyReady = Boolean(data.configured);
       apiKeyStatus.textContent = data.configured
-        ? "A key is saved in server memory."
+        ? "A key is saved in server memory (cleared when the app stops)."
         : "No key saved for this profile. Enter your provider key, then Save and Verify.";
     } catch {
       ownKeyReady = false;
       apiKeyStatus.textContent = "Key status unavailable.";
     }
     updateMessageCounter();
+    updateActiveConfigDisplay();
   }
 
   function updateModelBadge() {
     if (credentialMode === "shared_groq") {
-      currentModelDisplay.textContent = "Groq - Shared access";
+      currentModelDisplay.textContent = "Groq · Shared access";
       return;
     }
     const providerLabel = providerSelect.options[providerSelect.selectedIndex]?.text.split(" (")[0] || "Groq";
     const customModel = modelNameInput.value.trim();
-    const display = customModel ? `${providerLabel} - ${customModel}` : providerLabel;
+    const display = customModel ? `${providerLabel} · ${customModel}` : providerLabel;
     currentModelDisplay.textContent = display;
   }
 
@@ -1370,12 +1610,14 @@ dialog#onboardingDialog::backdrop {
     renderProfileOptions();
     updateModelBadge();
     refreshKeyStatus();
+    showSettingsConfirmation("Settings saved.", "success");
   });
 
   profileSelect.addEventListener("change", () => {
     activeProfileId = profileSelect.value;
     persistProfiles();
     loadActiveProfile();
+    showSettingsConfirmation("Settings saved.", "success");
   });
 
   document.querySelector("#addProfile").addEventListener("click", () => {
@@ -1384,33 +1626,30 @@ dialog#onboardingDialog::backdrop {
     activeProfileId = profile.id;
     persistProfiles();
     loadActiveProfile();
+    showSettingsConfirmation("Settings saved.", "success");
   });
 
-  profileNameInput.addEventListener("input", () => {
+  profileNameInput.addEventListener("change", () => {
     activeProfile().name = profileNameInput.value.trim().slice(0, 64) || "Untitled";
     persistProfiles();
     renderProfileOptions();
+    showSettingsConfirmation("Settings saved.", "success");
   });
 
   document.querySelector("#deleteProfile").addEventListener("click", async () => {
     if (profiles.length <= 1) return;
-    await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: "" }) });
-    profiles = profiles.filter(profile => profile.id !== activeProfileId);
-    activeProfileId = profiles[0].id;
-    persistProfiles();
-    loadActiveProfile();
+    try {
+      await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: "" }) });
+      profiles = profiles.filter(profile => profile.id !== activeProfileId);
+      activeProfileId = profiles[0].id;
+      persistProfiles();
+      loadActiveProfile();
+      showSettingsConfirmation("Settings saved.", "success");
+    } catch (err) {
+      showSettingsConfirmation(err instanceof Error ? err.message : "Could not delete profile.", "error");
+    }
   });
 
-  // Chat Execution
-  let history = [];
-  let busy = false;
-  let conversationId = "";
-  let messagesUsed = 0;
-  let conversationReady = false;
-  let conversationSetupPending = true;
-  const MESSAGE_LIMIT = 10;
-  const conversationIdKey = "braincellgpt_active_conversation_v1";
-  const outdatedServerMessage = "The running BraincellGPT server is out of date. Stop it, run `python app.py`, then reload this page.";
 
   const conversationDatabase = new Promise((resolve, reject) => {
     const request = indexedDB.open("braincellgpt_conversations", 1);
@@ -1483,12 +1722,22 @@ dialog#onboardingDialog::backdrop {
 
   function updateMessageCounter() {
     const reached = credentialMode === "shared_groq" && messagesUsed >= MESSAGE_LIMIT;
-    messageCounter.textContent = conversationReady
-      ? (credentialMode === "own_key" ? "Your provider's limits apply" : `${messagesUsed}/${MESSAGE_LIMIT} shared messages used${reached ? "; add your own key in Settings to continue." : ""}`)
-      : "Starting conversation?";
-    messageCounter.dataset.limit = reached ? "reached" : "available";
-    send.disabled = !conversationReady || busy || reached || !credentialMode || (credentialMode === "own_key" && !ownKeyReady);
-    newChatButton.disabled = busy || conversationSetupPending;
+    if (!credentialMode) {
+      messageCounter.textContent = "Choose how to power BraincellGPT to begin chatting";
+      messageCounter.dataset.limit = "available";
+    } else if (credentialMode === "own_key" && !ownKeyReady) {
+      messageCounter.textContent = "Add your provider key in Settings to begin chatting";
+      messageCounter.dataset.limit = "available";
+    } else if (credentialMode === "own_key") {
+      messageCounter.textContent = "Your provider's limits apply";
+      messageCounter.dataset.limit = "available";
+    } else {
+      messageCounter.textContent = `${messagesUsed}/${MESSAGE_LIMIT} shared messages used${reached ? " — Add your own key in Settings to continue." : ""}`;
+      messageCounter.dataset.limit = reached ? "reached" : "available";
+    }
+    const canSend = Boolean(conversationReady && !busy && !reached && credentialMode && (credentialMode !== "own_key" || ownKeyReady));
+    send.disabled = !canSend;
+    newChatButton.disabled = busy || conversationSetupPending || !credentialMode || (credentialMode === "own_key" && !ownKeyReady);
   }
 
   async function readJsonResponse(response) {
@@ -1532,23 +1781,7 @@ dialog#onboardingDialog::backdrop {
 
   async function restoreTranscript() {
     const saved = await getLocalConversation(conversationId);
-    let legacyMessages = [];
-    if (!saved) {
-      try {
-        const legacy = JSON.parse(sessionStorage.getItem("braincellgpt_transcript_v1_" + conversationId) || "[]");
-        if (Array.isArray(legacy)) legacyMessages = legacy;
-      } catch { legacyMessages = []; }
-    }
-    const record = saved && typeof saved === "object"
-      ? saved
-      : { id: conversationId, title: "New conversation", messages: legacyMessages, createdAt: Date.now(), updatedAt: Date.now() };
-    history = Array.isArray(record.messages) ? record.messages.filter(item => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string") : [];
-    record.messages = history;
-    if (!Number.isFinite(record.createdAt)) record.createdAt = Date.now();
-    if (!Number.isFinite(record.updatedAt)) record.updatedAt = record.createdAt;
-    if (typeof record.title !== "string") record.title = "New conversation";
-    if (history.length && record.title === "New conversation") record.title = history.find(item => item.role === "user")?.content.slice(0, 60) || "Conversation";
-    await saveLocalConversation(record);
+    history = Array.isArray(saved?.messages) ? saved.messages.filter(item => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string") : [];
     for (const item of history) renderMessage(item.role, item.content);
     if (history.length) activeThreadTitle.textContent = history.find(item => item.role === "user")?.content.slice(0, 25) || "Conversation";
     await renderConversationList();
@@ -1582,19 +1815,45 @@ dialog#onboardingDialog::backdrop {
       const configResponse = await fetch("/api/chat/config");
       const config = await readJsonResponse(configResponse);
       if (!configResponse.ok) throw new Error("Could not load chat settings. Reload the page and try again.");
-      credentialMode = config.credential_mode;
+
+      const savedMode = config.credential_mode;
+      const sharedAvailable = Boolean(config.shared_groq_available);
+      credentialMode = savedMode || null;
       credentialModeSelect.value = credentialMode || "";
-      applyCredentialModeControls();
-      if (!credentialMode) {
-        if (config.shared_groq_available) onboardingDialog.showModal();
-        else openDrawer();
+      providerSelect.disabled = credentialMode === "shared_groq";
+
+      if (credentialMode === "shared_groq") {
+        messagesUsed = Number(config.shared_messages_used) || 0;
       }
-      if (credentialMode === "shared_groq") messagesUsed = Number(config.shared_messages_used) || 0;
+
+      await refreshKeyStatus();
+      updateActiveConfigDisplay();
+
+      // Check whether a complete, valid configuration exists
+      const isSharedValid = credentialMode === "shared_groq" && sharedAvailable;
+      const isOwnKeyValid = credentialMode === "own_key" && ownKeyReady;
+      const hasValidConfig = isSharedValid || isOwnKeyValid;
+
+      if (!hasValidConfig) {
+        conversationReady = false;
+        send.disabled = true;
+        if (!credentialMode) {
+          if (typeof onboardingDialog.showModal === "function") {
+            onboardingDialog.showModal();
+          }
+        } else if (credentialMode === "own_key" && !ownKeyReady) {
+          openDrawer();
+          showSettingsConfirmation("Your provider key is not configured for this session. Enter your key to continue.", "error");
+        }
+        updateMessageCounter();
+        return;
+      }
+
+      // Restore existing conversation if available
       const storedId = localStorage.getItem(conversationIdKey) || "";
       if (storedId) {
         const response = await fetch(`/api/conversations/usage?id=${encodeURIComponent(storedId)}`);
         if (response.ok) {
-          const data = await readJsonResponse(response);
           conversationId = storedId;
           if (credentialMode === "shared_groq") await refreshSharedUsage();
           else messagesUsed = 0;
@@ -1626,49 +1885,90 @@ dialog#onboardingDialog::backdrop {
   }
 
   async function saveCredentialMode(mode) {
-    const response = await fetch("/api/chat/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ credential_mode: mode }) });
+    const response = await fetch("/api/chat/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential_mode: mode })
+    });
     const data = await readJsonResponse(response);
     if (!response.ok) throw new Error(data.error || "Could not save this choice.");
     credentialMode = data.credential_mode;
-    applyCredentialModeControls();
-    if (credentialMode === "shared_groq") await refreshSharedUsage();
-    else messagesUsed = 0;
+    providerSelect.disabled = credentialMode === "shared_groq";
     credentialModeSelect.value = credentialMode;
     updateMessageCounter();
+    updateActiveConfigDisplay();
   }
-  function applyCredentialModeControls() {
-    const shared = credentialMode === "shared_groq";
-    providerSelect.disabled = shared;
-    profileSelect.disabled = shared;
-    document.querySelector("#addProfile").disabled = shared;
-    document.querySelector("#deleteProfile").disabled = shared || profiles.length <= 1;
-    apiKeyInput.disabled = shared;
-    document.querySelector("#saveApiKey").disabled = shared;
-    document.querySelector("#clearApiKey").disabled = shared;
-    baseUrlInput.disabled = shared;
-    modelNameInput.disabled = shared;
-    updateModelBadge();
-  }
+
+  // Prevent closing onboarding without choosing an option
+  onboardingDialog.addEventListener("cancel", (e) => {
+    if (!credentialMode) {
+      e.preventDefault();
+    }
+  });
+
   document.querySelector("#chooseSharedKey").addEventListener("click", async () => {
     onboardingStatus.textContent = "Saving your choice…";
-    try { await saveCredentialMode("shared_groq"); providerSelect.value = "groq"; providerSelect.dispatchEvent(new Event("change")); onboardingDialog.close(); }
-    catch (err) { onboardingStatus.textContent = err instanceof Error ? err.message : "Could not configure free access."; }
+    try {
+      await saveCredentialMode("shared_groq");
+      providerSelect.value = "groq";
+      activeProfile().provider = "groq";
+      persistProfiles();
+      renderProfileOptions();
+      updateModelBadge();
+      await refreshSharedUsage();
+      updateActiveConfigDisplay();
+      if (typeof onboardingDialog.close === "function") onboardingDialog.close();
+      if (!conversationId) await createConversation();
+      else conversationReady = true;
+      updateMessageCounter();
+      showSettingsConfirmation("Settings saved.", "success");
+    } catch (err) {
+      onboardingStatus.textContent = err instanceof Error ? err.message : "Could not configure free access.";
+    }
   });
-  document.querySelector("#chooseOwnKey").addEventListener("click", async () => {
-    try { await saveCredentialMode("own_key"); await refreshKeyStatus(); onboardingDialog.close(); openDrawer(); apiKeyInput.focus(); }
-    catch (err) { onboardingStatus.textContent = err instanceof Error ? err.message : "Could not save your choice."; }
+
+  document.querySelector("#chooseOwnKey").addEventListener("click", () => {
+    if (typeof onboardingDialog.close === "function") onboardingDialog.close();
+    credentialModeSelect.value = "own_key";
+    providerSelect.disabled = false;
+    openDrawer();
+    updateActiveConfigDisplay();
+    showSettingsConfirmation("Configure your provider and save your API key to activate.", "checking");
+    apiKeyInput.focus();
   });
+
   credentialModeSelect.addEventListener("change", async () => {
     const mode = credentialModeSelect.value;
     if (!mode) return;
+    const previousMode = credentialMode;
+    showSettingsConfirmation("Saving access mode...", "checking");
     try {
       await saveCredentialMode(mode);
-      if (mode === "own_key") { await refreshKeyStatus(); apiKeyInput.focus(); }
-      else { providerSelect.value = "groq"; providerSelect.dispatchEvent(new Event("change")); }
+      if (mode === "shared_groq") {
+        providerSelect.value = "groq";
+        activeProfile().provider = "groq";
+        persistProfiles();
+        renderProfileOptions();
+        await refreshSharedUsage();
+      }
+      updateModelBadge();
+      await refreshKeyStatus();
+      updateActiveConfigDisplay();
+      showSettingsConfirmation("Settings saved.", "success");
+      if (mode === "own_key" && !ownKeyReady) {
+        apiKeyInput.focus();
+      } else if (!conversationId) {
+        await createConversation();
+      } else {
+        conversationReady = true;
+      }
+      updateMessageCounter();
     } catch (err) {
-      credentialModeSelect.value = credentialMode || "";
+      credentialModeSelect.value = previousMode || "";
+      showSettingsConfirmation(err instanceof Error ? err.message : "Could not save access mode.", "error");
       apiKeyStatus.dataset.state = "error";
       apiKeyStatus.textContent = err instanceof Error ? err.message : "Could not save access mode.";
+      updateActiveConfigDisplay();
     }
   });
 
@@ -1721,7 +2021,7 @@ dialog#onboardingDialog::backdrop {
 
   async function sendMessage(text) {
     text = text.trim();
-    if (!text || busy || !conversationReady || (credentialMode === "shared_groq" && messagesUsed >= MESSAGE_LIMIT) || (credentialMode === "own_key" && !ownKeyReady)) return;
+    if (!text || busy || !conversationReady || !credentialMode || (credentialMode === "shared_groq" && messagesUsed >= MESSAGE_LIMIT) || (credentialMode === "own_key" && !ownKeyReady)) return;
     busy = true;
     updateMessageCounter();
     input.value = "";
@@ -1758,13 +2058,14 @@ dialog#onboardingDialog::backdrop {
           history: prior,
           provider: credentialMode === "shared_groq" ? "groq" : providerSelect.value,
           profile_id: activeProfileId,
-          base_url: baseUrlInput ? baseUrlInput.value.trim() : "",
-          model: modelNameInput ? modelNameInput.value.trim() : ""
+          base_url: credentialMode === "shared_groq" ? "" : (baseUrlInput ? baseUrlInput.value.trim() : ""),
+          model: credentialMode === "shared_groq" ? "" : (modelNameInput ? modelNameInput.value.trim() : "")
         })
       });
       const data = await readJsonResponse(response);
       if (credentialMode === "shared_groq" && Number.isInteger(data.messages_used)) messagesUsed = data.messages_used;
       updateMessageCounter();
+      updateActiveConfigDisplay();
       if (!response.ok) throw new Error(data.error || "Request failed.");
       providerSucceeded = true;
       const timestamp = Date.now();
@@ -1810,6 +2111,7 @@ dialog#onboardingDialog::backdrop {
     btn.textContent = "Checking...";
     apiKeyStatus.dataset.state = "checking";
     apiKeyStatus.textContent = "Testing connection...";
+    showSettingsConfirmation("Testing connection...", "checking");
     try {
       const response = await fetch("/api/test-connection", {
         method: "POST",
@@ -1817,7 +2119,7 @@ dialog#onboardingDialog::backdrop {
         body: JSON.stringify({
           provider: credentialMode === "shared_groq" ? "groq" : providerSelect.value,
           profile_id: activeProfileId,
-          api_key: credentialMode === "shared_groq" ? "" : apiKeyInput.value.trim(),
+          api_key: apiKeyInput.value.trim(),
           base_url: baseUrlInput ? baseUrlInput.value.trim() : "",
           model: modelNameInput ? modelNameInput.value.trim() : ""
         })
@@ -1826,9 +2128,11 @@ dialog#onboardingDialog::backdrop {
       if (!response.ok) throw new Error(data.error || "Connection test failed.");
       apiKeyStatus.dataset.state = "success";
       apiKeyStatus.textContent = "Connection verified.";
+      showSettingsConfirmation("Connection verified.", "success");
     } catch (err) {
       apiKeyStatus.dataset.state = "error";
       apiKeyStatus.textContent = err instanceof Error ? err.message : "Connection failed.";
+      showSettingsConfirmation(err instanceof Error ? err.message : "Connection failed.", "error");
     } finally {
       btn.disabled = false;
       btn.textContent = "Verify";
@@ -1836,30 +2140,72 @@ dialog#onboardingDialog::backdrop {
   });
 
   // Save / Clear API key
-  document.querySelector("#saveApiKey").addEventListener("click", () => {
+  document.querySelector("#saveApiKey").addEventListener("click", async () => {
     const key = apiKeyInput.value.trim();
-    if (!key) return;
-    fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: key }) })
-      .then(async r => { if (!r.ok) throw new Error(); apiKeyInput.value = ""; ownKeyReady = true; apiKeyStatus.dataset.state = "success"; apiKeyStatus.textContent = "Key saved in memory."; updateMessageCounter(); })
-      .catch(() => { apiKeyStatus.dataset.state = "error"; apiKeyStatus.textContent = "Could not save key."; });
+    if (!key) {
+      showSettingsConfirmation("Enter an API key before saving.", "error");
+      return;
+    }
+    showSettingsConfirmation("Saving key...", "checking");
+    try {
+      const response = await fetch("/api/profile-secret", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: activeProfileId, api_key: key })
+      });
+      const data = await readJsonResponse(response);
+      if (!response.ok) throw new Error(data.error || "Could not save key.");
+      apiKeyInput.value = "";
+      ownKeyReady = true;
+      if (credentialMode !== "own_key") {
+        await saveCredentialMode("own_key");
+      }
+      await refreshKeyStatus();
+      updateActiveConfigDisplay();
+      showSettingsConfirmation("Settings saved.", "success");
+      if (!conversationId) await createConversation();
+      else conversationReady = true;
+      updateMessageCounter();
+    } catch (err) {
+      apiKeyStatus.dataset.state = "error";
+      apiKeyStatus.textContent = err instanceof Error ? err.message : "Could not save key.";
+      showSettingsConfirmation(err instanceof Error ? err.message : "Could not save key.", "error");
+    }
   });
 
   document.querySelector("#clearApiKey").addEventListener("click", async () => {
     apiKeyInput.value = "";
-    await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: "" }) });
-    apiKeyStatus.dataset.state = "";
-    apiKeyStatus.textContent = "Key cleared.";
-    ownKeyReady = ["ollama", "lmstudio"].includes(activeProfile().provider);
-    updateMessageCounter();
+    try {
+      await fetch("/api/profile-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: activeProfileId, api_key: "" }) });
+      apiKeyStatus.dataset.state = "";
+      apiKeyStatus.textContent = "Key cleared.";
+      ownKeyReady = ["ollama", "lmstudio"].includes(activeProfile().provider);
+      await refreshKeyStatus();
+      updateActiveConfigDisplay();
+      showSettingsConfirmation("Key cleared.", "success");
+    } catch (err) {
+      showSettingsConfirmation(err instanceof Error ? err.message : "Could not clear key.", "error");
+    }
   });
 
   [baseUrlInput, modelNameInput].forEach(f => {
-    if (f) f.addEventListener("input", () => {
-      activeProfile().baseUrl = baseUrlInput.value.trim();
-      activeProfile().model = modelNameInput.value.trim();
-      persistProfiles();
-      updateModelBadge();
-    });
+    if (f) {
+      f.addEventListener("change", () => {
+        activeProfile().baseUrl = baseUrlInput.value.trim();
+        activeProfile().model = modelNameInput.value.trim();
+        persistProfiles();
+        updateModelBadge();
+        updateActiveConfigDisplay();
+        showSettingsConfirmation("Settings saved.", "success");
+      });
+      f.addEventListener("input", () => {
+        activeProfile().baseUrl = baseUrlInput.value.trim();
+        activeProfile().model = modelNameInput.value.trim();
+        persistProfiles();
+        updateModelBadge();
+        updateActiveConfigDisplay();
+      });
+    }
   });
 
   form.addEventListener("submit", e => {
@@ -1875,7 +2221,7 @@ dialog#onboardingDialog::backdrop {
   });
 
   async function startNewConversation() {
-    if (busy || conversationSetupPending) return;
+    if (busy || conversationSetupPending || !credentialMode || (credentialMode === "own_key" && !ownKeyReady)) return;
     conversationSetupPending = true;
     newChatButton.disabled = true;
     try {
@@ -2018,7 +2364,7 @@ let spaceAngleY = 0;
   const globeWrapper = document.querySelector("#globeTrigger");
   if (!canvas || !globeWrapper) return;
 
-  const gl = canvas.getContext("webgl", { alpha: true, antialias: true }) || 
+  const gl = canvas.getContext("webgl", { alpha: true, antialias: true }) ||
              canvas.getContext("experimental-webgl", { alpha: true });
 
   if (!gl) {
@@ -2139,23 +2485,23 @@ let spaceAngleY = 0;
       vec3 normal = normalize(vNormal);
       vec3 light = normalize(uLightDir);
       vec3 view = vec3(0.0, 0.0, 1.0);
-      
+
       vec4 tex = texture2D(uTexture, vTexCoord);
-      
+
       // Sun Diffuse
       float diff = max(dot(normal, light), 0.0);
       vec3 col = tex.rgb * (diff * 0.95 + 0.18);
-      
+
       // Atmospheric Fresnel Blue Rim Glow (Like the reference photo)
       float fresnel = 1.0 - max(dot(normal, view), 0.0);
       float atmo = pow(fresnel, 3.4) * 0.24;
       vec3 atmoCol = vec3(0.18, 0.42, 0.68) * atmo;
-      
+
       // Ocean Specular Glint
       vec3 reflectDir = reflect(-light, normal);
       float spec = pow(max(dot(view, reflectDir), 0.0), 16.0);
       vec3 specular = vec3(0.35, 0.6, 0.9) * spec * (1.0 - tex.g * 0.4);
-      
+
       gl_FragColor = vec4(col + atmoCol + specular, 1.0);
     }
   `;

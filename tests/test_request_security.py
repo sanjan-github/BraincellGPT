@@ -262,6 +262,66 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
                 finally:
                     connection.close()
 
+    def test_chat_config_mode_persistence_and_invalid_rejection(self):
+        # Setting own_key mode works and persists
+        status, result = self._post_json("/api/chat/config", {"credential_mode": "own_key"})
+        self.assertEqual(status, 200)
+        self.assertEqual(result["credential_mode"], "own_key")
+        self.assertEqual(self.usage_store.credential_mode(), "own_key")
+
+        # Invalid mode fails and preserves existing configuration
+        status, err = self._post_json("/api/chat/config", {"credential_mode": "invalid_mode"})
+        self.assertEqual(status, 400)
+        self.assertEqual(self.usage_store.credential_mode(), "own_key")
+
+    def test_next_chat_request_uses_newly_selected_provider_and_mode(self):
+        self.usage_store.set_credential_mode("own_key")
+        conversation_id = self.usage_store.create_conversation()
+        profile_id = "test-profile-next"
+        self.addCleanup(app._set_profile_secret, profile_id, "")
+        app._set_profile_secret(profile_id, "test-next-key")
+
+        response_body = MagicMock()
+        response_body.read.return_value = b'{"choices":[{"message":{"content":"Provider response"}}]}'
+        response_body.__enter__.return_value = response_body
+
+        with patch("app.open_provider_request", return_value=response_body) as provider:
+            status, result = self._post_json("/api/chat", {
+                "message": "hi", "provider": "openai", "profile_id": profile_id,
+                "conversation_id": conversation_id, "request_id": "9" * 32,
+            })
+            self.assertEqual(status, 200)
+            self.assertEqual(result["reply"], "Provider response")
+            request = provider.call_args.args[0]
+            self.assertEqual(request.headers.get("Authorization"), "Bearer test-next-key")
+            self.assertIn("api.openai.com", request.full_url)
+
+    def test_api_keys_are_not_leaked_in_config_or_status(self):
+        profile_id = "leak-check-profile"
+        secret_key = "super-secret-key-12345"
+        self.addCleanup(app._set_profile_secret, profile_id, "")
+        app._set_profile_secret(profile_id, secret_key)
+
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        try:
+            with patch("app.PORT", self.server.server_port):
+                # Check status endpoint
+                connection.request("GET", f"/api/profile-secret-status?id={profile_id}")
+                resp = connection.getresponse()
+                body = resp.read().decode()
+                self.assertEqual(resp.status, 200)
+                self.assertNotIn(secret_key, body)
+                self.assertEqual(json.loads(body), {"configured": True})
+
+                # Check config endpoint
+                connection.request("GET", "/api/chat/config")
+                resp = connection.getresponse()
+                body = resp.read().decode()
+                self.assertEqual(resp.status, 200)
+                self.assertNotIn(secret_key, body)
+        finally:
+            connection.close()
+
 
 if __name__ == "__main__":
     unittest.main()
