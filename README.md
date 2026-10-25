@@ -4,192 +4,177 @@
 
 ### One brain cell. Infinite confusion.
 
-**A chaotic chatbot for conversations that make absolutely no sense.**
+An easy-to-run chatbot for entertaining conversations, with an optional local coding agent for working in a project directory.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
 
 </div>
 
-BrainCellGPT is built for absurd conversations, unexpected tangents, ridiculous replies, and humour that takes a wrong turn and keeps going. It is not trying to be the most serious chatbot on the internet. The point is to make chatting entertainingly chaotic.
+BrainCellGPT is a Python application with a browser-based chat interface. Connect it to a hosted model provider or a local Ollama or LM Studio server. The backend also exposes a coding-agent API for inspecting and editing files in a configured workspace, running commands when enabled, keeping local edit checkpoints, and connecting to configured MCP servers.
+
+The application is designed for local use. It does not require a frontend build step or a database service.
 
 ## Features
 
-- **Chaotic conversations:** Absurd replies, unexpected tangents, and unpredictable humour.
-- **Conversation context:** Earlier messages in the current session are included so replies can follow the conversation.
-- **Multiple providers:** Choose from supported hosted services or a local model.
-- **Flexible credentials:** Use a key from your local `.env` file or enter a key in the interface.
-- **Lightweight interface:** Plain HTML, CSS, and JavaScript with no frontend build step.
-- **Simple startup:** Run the app with one Python command.
-- **Responsive layout:** Use the chat interface on desktop or mobile.
+- Chat with hosted providers, local model servers, or a compatible custom endpoint.
+- Configure multiple provider profiles in the browser session.
+- Access the coding-agent API with Code, Ask, Architect, Debug, and Orchestrator modes.
+- Browse and search workspace files, preview diffs, and apply edits with bounded file access.
+- Restore file edits from checkpoints; agent sessions and checkpoints are stored locally in SQLite.
+- Use streaming approvals for agent edits, command execution, and configured MCP tool calls. Non-streaming agent requests use request-level edit and command settings.
+- Connect configured MCP stdio or Streamable HTTP servers during streaming agent runs. Remote MCP OAuth authorization-code flows are supported.
+- Run the server with Python's standard library. An OS keyring adapter is optional for native credential storage.
+
+Model capabilities vary by provider and model. Tool calling, image input, streaming, and available context depend on the selected service.
+
+## Requirements
+
+- Python 3.10 or later
+- A supported provider API key, or a locally running Ollama or LM Studio server with a model installed
+
+The core application does not require `pip install`. The optional `keyring` package enables supported macOS and Linux desktop keyrings when available.
 
 ## Quick start
 
-### Requirements
-
-- Python 3.10 or later
-- An internet connection and a valid key for your chosen hosted provider, or a locally running Ollama/LM Studio server
-
-### 1. Get the project
+Clone the repository and enter the project directory:
 
 ```bash
 git clone https://github.com/sanjan-github/BraincellGPT.git
 cd BraincellGPT
 ```
 
-### 2. Configure your provider
-
-Copy the example environment file:
+Copy the example configuration file:
 
 **Windows PowerShell**
+
 ```powershell
 Copy-Item .env.example .env
 ```
 
-**macOS / Linux**
+**macOS and Linux**
+
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and add the key for the provider you intend to use. For example:
+Add the credentials for the provider you plan to use. For example:
 
 ```dotenv
-GROQ_API_KEY=your_key_here
+GROQ_API_KEY=your_api_key
 GROQ_MODEL=llama-3.3-70b-versatile
 PORT=8000
 ```
 
-You can also enter a key in a provider profile in the interface. Saved profile keys are kept in local Python process memory and override that provider's `.env` value. They are cleared when the app stops, expire after 24 hours, and are capped at 128 profiles.
-
-### 3. Start BrainCellGPT
+Start the application:
 
 ```bash
 python app.py
 ```
 
-### 4. Open the chat
+Open [http://localhost:8000](http://localhost:8000), select a provider profile, and start a conversation. Keep the server running while using the app; stop it with `Ctrl+C`.
 
-Visit **http://localhost:8000** in your browser, select a provider, and start chatting.
+Use the local server URL. Opening `web/index.html` directly does not provide the API needed by the interface.
 
-Keep the server running while you use the app. Stop it with `Ctrl+C`.
+## Providers
 
-> **Important:** Open the app through the local server at `http://localhost:8000`. Do not open `web/index.html` directly or use a separate static-server extension.
+Configure only the providers you use in `.env`, or set up a profile in the browser. API keys are provider-specific.
 
-## Supported providers
-
-Select the provider in the chat interface. The credential must match the selected provider.
-
-| Provider | Environment variable | Notes |
+| Provider | Environment variables | Details |
 | --- | --- | --- |
-| Groq | `GROQ_API_KEY` | Default provider |
-| OpenAI | `OPENAI_API_KEY` | Set `OPENAI_MODEL` if needed |
-| Azure OpenAI | `AZURE_OPENAI_API_KEY` | Set `AZURE_OPENAI_ENDPOINT` to the Azure `/openai/v1` base and `AZURE_OPENAI_DEPLOYMENT` to the deployment name |
-| Google Gemini | `GEMINI_API_KEY` | OpenAI-compatible Gemini API; set `GEMINI_MODEL` if needed |
-| Anthropic | `ANTHROPIC_API_KEY` | Uses Anthropic's Messages API |
-| OpenRouter | `OPENROUTER_API_KEY` | Set `OPENROUTER_MODEL` if needed |
-| NVIDIA NIM | `NVIDIA_NIM_API_KEY` | Set `NVIDIA_NIM_MODEL` if needed |
-| DeepSeek | `DEEPSEEK_API_KEY` | Set `DEEPSEEK_MODEL` if needed |
-| Mistral | `MISTRAL_API_KEY` | Set `MISTRAL_MODEL` if needed |
-| xAI | `XAI_API_KEY` | Set `XAI_MODEL` if needed |
-| Together AI | `TOGETHER_API_KEY` | Set `TOGETHER_MODEL` if needed |
-| Fireworks AI | `FIREWORKS_API_KEY` | Set `FIREWORKS_MODEL` if needed |
-| Cerebras | `CEREBRAS_API_KEY` | Set `CEREBRAS_MODEL` if needed |
-| Ollama | Not required by default | Ollama must be running locally with a model installed |
-| LM Studio | Not required by default | LM Studio's local server must be running |
-| Custom compatible API | `CUSTOM_API_KEY` | Configure its HTTPS base URL and model ID |
+| Groq | `GROQ_API_KEY`, `GROQ_MODEL` | Default provider |
+| OpenAI | `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI API |
+| Azure OpenAI | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT` | Use the Azure OpenAI `/openai/v1` base endpoint and deployment name |
+| Google Gemini | `GEMINI_API_KEY`, `GEMINI_MODEL` | OpenAI-compatible endpoint |
+| Anthropic | `ANTHROPIC_API_KEY` | Anthropic Messages API |
+| OpenRouter | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | OpenAI-compatible endpoint |
+| NVIDIA NIM | `NVIDIA_NIM_API_KEY`, `NVIDIA_NIM_MODEL` | OpenAI-compatible endpoint |
+| DeepSeek | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` | OpenAI-compatible endpoint |
+| Mistral | `MISTRAL_API_KEY`, `MISTRAL_MODEL` | OpenAI-compatible endpoint |
+| xAI | `XAI_API_KEY`, `XAI_MODEL` | OpenAI-compatible endpoint |
+| Together AI | `TOGETHER_API_KEY`, `TOGETHER_MODEL` | OpenAI-compatible endpoint |
+| Fireworks | `FIREWORKS_API_KEY`, `FIREWORKS_MODEL` | OpenAI-compatible endpoint |
+| Cerebras | `CEREBRAS_API_KEY`, `CEREBRAS_MODEL` | OpenAI-compatible endpoint |
+| Ollama | None by default | Run Ollama locally and install a model |
+| LM Studio | None by default | Start the LM Studio local server |
+| Custom compatible API | `CUSTOM_API_BASE_URL`, `CUSTOM_API_KEY`, `CUSTOM_MODEL` | Configure the compatible API base URL and model ID |
 
-Model availability and pricing depend on the provider and account. A model shown as a default may not be available to every account. For local providers, install the model and start the local server before connecting.
+Provider defaults are listed in `.env.example`. A provider's model availability and features depend on your account and its current service configuration.
+
+## Coding agent API
+
+The coding agent is available through the backend API; the browser interface currently provides chat, not coding-agent controls. It uses the configured workspace and offers these modes:
+
+- **Code:** read, edit, and run permitted workspace commands.
+- **Ask:** inspect and explain without editing files or running commands.
+- **Architect:** inspect the project and make Markdown documentation edits only.
+- **Debug:** investigate issues and make focused changes when permitted.
+- **Orchestrator:** break a task into bounded follow-up tasks.
+
+Workspace changes are constrained by server-side path validation, protected-file rules, file-size limits, and command limits. Enabling edits or commands is an explicit request setting. In streaming runs, each mutating tool call pauses for approval. Agent sessions and edit checkpoints are stored in a local SQLite database; ordinary chat history remains in browser session state.
+
+Configured MCP tools are available during streaming agent runs and require per-call approval. Remote MCP endpoints require public HTTPS. OAuth authorization uses an authorization-code flow with PKCE. MCP server setup is environment-based; see [the architecture notes](docs/architecture.md) for current behavior and limitations.
 
 ## Configuration
 
-All settings are optional unless required by your selected provider. Copy `.env.example` and configure only the providers you use.
+`.env.example` lists the supported provider keys and model variables. Other common settings include:
 
 | Variable | Purpose |
 | --- | --- |
-| `GROQ_API_KEY`, `GROQ_MODEL` | Groq credentials and model |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI credentials and model |
-| `ANTHROPIC_API_KEY` | Anthropic credential |
-| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | OpenRouter credentials and model |
-| `NVIDIA_NIM_API_KEY`, `NVIDIA_NIM_MODEL` | NVIDIA NIM credentials and model |
-| `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` | DeepSeek credentials and model |
-| `MISTRAL_API_KEY`, `MISTRAL_MODEL` | Mistral credentials and model |
-| `XAI_API_KEY`, `XAI_MODEL` | xAI credentials and model |
-| `TOGETHER_API_KEY`, `TOGETHER_MODEL` | Together AI credentials and model |
-| `FIREWORKS_API_KEY`, `FIREWORKS_MODEL` | Fireworks credentials and model |
-| `CEREBRAS_API_KEY`, `CEREBRAS_MODEL` | Cerebras credentials and model |
-| `CUSTOM_API_BASE_URL` | HTTPS base URL for a compatible custom API |
-| `CUSTOM_API_KEY`, `CUSTOM_MODEL` | Custom API credential and model ID |
-| `PORT` | Local server port; defaults to `8000` |
+| `PORT` | Local HTTP server port; defaults to `8000` |
+| `BRAINCELLGPT_MCP_SERVERS` | JSON configuration for MCP servers; credentials should be referenced through environment variables |
+| `BRAINCELLGPT_DATA_DIR` | Optional location for local agent session and checkpoint data |
 
-Do not commit `.env` or place real credentials in source code. Provider keys are not interchangeable.
+Do not commit `.env` or put real credentials in source code. Provider profiles and names are stored in browser `sessionStorage`. Profile API keys are held in server process memory, expire after 24 hours, and are cleared when the application stops. MCP OAuth credentials may be stored using a supported OS credential store; the application does not fall back to plaintext credential files.
 
-## Project structure
+## Security
 
-```text
-BraincellGPT/
-├── app.py                   # Local Python server and provider requests
-├── .env.example             # Example configuration (no real secrets)
-├── web/
-│   └── index.html            # Chat interface
-├── tests/
-│   └── test_app.py           # Application tests
-└── .github/
-    └── workflows/
-        └── ci.yml            # Automated checks
-```
+The server binds to loopback by default. Do not expose the app directly to an untrusted network. Remote binding is an advanced opt-in that requires a long shared token, an HTTPS public origin, and a TLS reverse proxy; see [the security notes](docs/security.md).
 
-## Development and tests
+Custom remote provider and MCP endpoints are validated. Remote MCP and custom provider requests use public-address checks and do not follow redirects. Review the selected provider's terms and privacy practices, since prompts and files included in requests are sent to that provider.
 
-BrainCellGPT uses Python's standard library for the server and vanilla HTML, CSS, and JavaScript for the interface. No npm install, frontend compilation, or third-party Python packages are required for the current app.
+Windows filesystem writes and deletion have a known limitation: a hostile concurrent parent-directory or reparse-point swap can race path-based replacement or deletion. See [the architecture notes](docs/architecture.md) for details. Passing the test suite does not establish suitability for public or production deployment.
 
-Check Python syntax:
+## Development
 
-```bash
-python -m py_compile app.py
-```
-
-Run the test suite:
+Run the unit tests:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Run the app locally:
+Run the HTTP clean-install smoke check:
 
 ```bash
-python app.py
+python scripts/smoke_clean_install.py
 ```
 
-The health endpoint is available at `http://localhost:8000/health`.
+Compile the Python sources:
 
-## Security and privacy
+```bash
+python -m compileall -q app.py backend tests scripts
+```
 
-- The server binds to `127.0.0.1` by default and is intended for local use.
-- API keys saved in a provider profile are held only in the local Python process memory. Chat requests send a profile ID, not the key; credentials are cleared when the app stops.
-- Provider profile names and nonsecret settings are held in the browser tab's session storage. The UI never reads a saved key back from the server.
-- Keys in `.env` remain on your machine. Never commit or share that file.
-- Provider requests are sent to the provider you select; review that provider's terms and privacy practices.
-- Local Ollama and LM Studio endpoints are restricted to localhost. Custom remote endpoints must use HTTPS and pass URL validation.
-- The app includes request-size limits, rate limiting, and security headers, but it is not designed to be exposed directly to the public internet.
+The CI workflow runs these checks on Windows, macOS, and Linux with Python 3.11 and 3.12. Optional live provider, MCP, and OAuth checks require a manual workflow run with credentials configured.
 
-Only enter credentials into a copy of the app you trust.
+## Project structure
 
-## Current limitations
+```text
+BraincellGPT/
+├── app.py                         # Local HTTP server and chat API
+├── backend/                       # Agent, filesystem, provider, MCP, and credential modules
+├── web/index.html                 # Browser interface
+├── scripts/smoke_clean_install.py # Clean-environment HTTP smoke check
+├── tests/                         # Unit and security regression tests
+├── docs/                          # Architecture, security, and project notes
+└── .github/workflows/ci.yml       # Cross-platform CI workflow
+```
 
-- Conversation history is kept in the current browser session; it is not saved after a page refresh.
-- Long-term memory, accounts, and persistent chat storage are not implemented.
-- Hosted providers require valid credentials, network access, and access to the selected model.
-- Local providers require their server and model to be installed and running.
-- Provider support currently focuses on text chat; capabilities may differ by provider.
+## Documentation
 
-## Project principles
-
-- Keep the app lightweight and easy to run.
-- Preserve the one-command startup: `python app.py`.
-- Prefer the Python standard library and browser-native technologies.
-- Avoid adding dependencies, services, or build steps without a concrete need.
-- Make focused changes and test them before claiming they work.
-- Keep documentation aligned with the features that are actually implemented.
+- [Architecture and API behavior](docs/architecture.md)
+- [Security guidance](docs/security.md)
+- [Feature parity and project scope](docs/roo-code-parity.md)
 
 ## License
 
