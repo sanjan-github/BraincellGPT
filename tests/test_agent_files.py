@@ -78,6 +78,23 @@ class AgentWorkspaceSafetyTests(unittest.TestCase):
         self.assertIn("changed or is no longer available", result["error"])
         self.assertNotIn(str(self.root), result["error"])
 
+    def test_workspace_root_alias_keeps_list_and_search_paths_relative(self):
+        (self.root / "visible.txt").write_text("needle-visible", encoding="utf-8")
+        alias = self.root.parent / (self.root.name + "-alias")
+        try:
+            alias.symlink_to(self.root, target_is_directory=True)
+        except (NotImplementedError, OSError) as exc:
+            self.skipTest(f"Directory symlinks are unavailable: {exc}")
+        try:
+            listed = json.loads(run_tool("list_files", {}, alias, allow_edits=False))
+            self.assertEqual(listed["files"], ["visible.txt"])
+            searched = json.loads(run_tool(
+                "search_files", {"query": "needle-visible"}, alias, allow_edits=False,
+            ))
+            self.assertEqual([item["path"] for item in searched["matches"]], ["visible.txt"])
+        finally:
+            alias.unlink(missing_ok=True)
+
     def test_write_rejects_path_outside_workspace(self):
         outside = self.root.parent / (self.root.name + "-outside.txt")
         try:

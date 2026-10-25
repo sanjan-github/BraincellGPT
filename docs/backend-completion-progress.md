@@ -15,9 +15,9 @@
 ## Phases
 
 - A baseline and diagnostics: VERIFIED
-- B reported CI failures: IN PROGRESS (POSIX cause fixed; no local POSIX runner; historical remote run cannot test uncommitted changes)
+- B reported CI failures: IN PROGRESS (POSIX race fix passed; path-alias fix is local only pending a second CI run)
 - C agent tool contracts: VERIFIED by code review and full test suites on Windows Python 3.11/3.12
-- D filesystem security and cross-platform correctness: IN PROGRESS (Windows limitation documented; POSIX race fix not runnable on this host)
+- D filesystem security and cross-platform correctness: IN PROGRESS (POSIX race tests passed on Linux/macOS; Windows write/delete limitation remains documented)
 - E HTTP API, streaming, approvals: VERIFIED by code review and full test suites on Windows Python 3.11/3.12
 - F providers and supporting backend modules: VERIFIED by code review and full test suites on Windows Python 3.11/3.12
 - Final verification: IN PROGRESS
@@ -40,6 +40,14 @@
 - Fix: return path-free messages for missing paths and permission errors; other OS errors include only the error number. Added a race-error regression test.
 - Verification: full unittest suites pass on Windows Python 3.11/3.12; pytest passes on Python 3.14.6; Pyright reports 0 diagnostics.
 
+### FS-003 — filesystem alias spellings rejected valid workspace paths
+
+- Affected: `backend/agent.py::_safe_path`, `_visible_files`, and workspace-relative path serialization.
+- Reproduction: CI run `40173975130`, Windows and macOS, with failures in file listing/search, search-replace, Architect writes, and checkpoint creation. Error payloads showed Windows 8.3 versus long paths and macOS `/var` versus `/private/var` spellings.
+- Root cause: the code resolved the root once and each child independently, then compared or relativized path strings. The OS returned different valid spellings for the same directory.
+- Fix: use a consistent absolute lexical workspace root for child construction and relative paths; reject absolute/drive-qualified paths and parent traversal; check each child component for symlinks. Actual file operations retain their existing no-follow/handle checks. Added a root-alias listing/search regression test.
+- Verification: focused tests pass on local Windows Python 3.11, 3.12, and 3.14; full suites pass locally. Fresh CI for this fix is pending.
+
 ## Verified limitation
 
 - Windows write replacement and deletion still resolve parent directories by path. The final `os.replace` can race a hostile directory/reparse-point swap. An attempted integration of the existing handle-rename helper failed Windows tests with `WinError 32` because the temporary handle lacks compatible delete sharing, so that experiment was reverted. The limitation is documented in `docs/architecture.md`; no stronger Windows guarantee is claimed.
@@ -50,21 +58,22 @@
 
 ## Verification this session
 
-- Working tree started on `main`, HEAD `235dbca0696860e21e5744b98ce68c7016dd9738`, tracking `origin/main` with no divergence. All changes listed above were uncommitted; nothing was staged.
-- `uv run --python 3.11 python -m unittest discover -s tests -q`: 177 run, 8 skipped, success.
-- `uv run --python 3.12 python -m unittest discover -s tests -q`: 177 run, 8 skipped, success.
-- `python -m unittest discover -s tests -q` (Python 3.14.6): 177 run, 8 skipped, success.
-- `uv run --python 3.11 --with pytest python -m pytest -q`: 169 passed, 8 skipped, success.
-- `uv run --python 3.12 --with pytest python -m pytest -q`: 169 passed, 8 skipped, success.
-- `python -m pytest -q` (Python 3.14.6): 169 passed, 8 skipped, success.
-- Discovery: all three Python versions collect 177 pytest items. A direct test-ID comparison on Python 3.14 found 177 unittest IDs and 177 pytest IDs with no differences. Unittest reports 177 total (169 passing, 8 skipped); pytest splits those into `169 passed, 8 skipped` and reports 62 nested subtests separately.
+- Current base commit: `95431bcf42233651f4b3917f4c357a5d6b7ace2d`, pushed to `origin/main`. The current follow-up filesystem alias fix is uncommitted in `backend/agent.py` and `tests/test_agent_files.py` only.
+- Fresh CI run for `95431bc`: https://github.com/sanjan-github/BraincellGPT/actions/runs/40173975130. Both Ubuntu jobs passed all tests, secret scan, and clean-install smoke. POSIX read/write path-swap race tests passed on Ubuntu and macOS. Both Windows jobs and both macOS jobs failed five agent filesystem operations because path aliases were compared as different directories. The tool assertions exposed the error payloads; the root cause and follow-up fix are recorded as FS-003. Live external integrations were skipped by workflow design.
+- After the FS-003 local fix, `uv run --python 3.11 python -m unittest discover -s tests -q`: 178 run, 8 skipped, success.
+- After the FS-003 local fix, `uv run --python 3.12 python -m unittest discover -s tests -q`: 178 run, 8 skipped, success.
+- After the FS-003 local fix, `python -m unittest discover -s tests -q` (Python 3.14.6): 178 run, 8 skipped, success.
+- After the FS-003 local fix, `uv run --python 3.11 --with pytest python -m pytest -q`: 170 passed, 8 skipped, success.
+- After the FS-003 local fix, `uv run --python 3.12 --with pytest python -m pytest -q`: 170 passed, 8 skipped, success.
+- After the FS-003 local fix, `python -m pytest -q` (Python 3.14.6): 170 passed, 8 skipped, success.
+- Discovery on all three Python versions: 178 pytest items. The earlier direct test-ID set comparison found no difference between unittest and pytest; the added alias test is collected by both. Unittest reports 178 total (170 passing, 8 skipped); pytest splits these into `170 passed, 8 skipped` and reports 62 nested subtests separately.
 - `uvx --from pyright pyright --pythonversion 3.11 app.py backend tests`: 0 errors, warnings, or informations.
 - `python -m compileall -q app.py backend tests scripts` on Python 3.14, and equivalent `uv run` commands on 3.11 and 3.12: success.
-- `uv run --python 3.11 python scripts/smoke_clean_install.py` and Python 3.12 equivalent: both passed.
-- Workflow secret scan command `git grep -n -I -E 'gsk_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|nvapi-[A-Za-z0-9_-]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' -- ':!*.lock'`: exit 1 with no matches (expected clean result). Run again after changes are committed so newly tracked files are included.
+- `uv run --python 3.11 python scripts/smoke_clean_install.py` and Python 3.12 equivalent: both passed after the FS-003 fix.
+- Workflow secret scan passed in both Ubuntu CI jobs on commit `95431bc`. The tracked-file scan should run again on the follow-up commit.
 - `git diff --check`: success.
-- POSIX dirfd race tests remain unverified locally (no WSL or Docker). The latest remote run is the pre-fix run `https://github.com/sanjan-github/BraincellGPT/actions/runs/40170135255`; it failed all six OS/Python jobs at unit tests. Windows failures reproduce neither on local Python 3.11 nor 3.12.
+- POSIX dirfd race tests passed on Linux/macOS CI for `95431bc`; local Windows cannot run them (no WSL or Docker). The Windows path-alias failures reproduced only on hosted runners before FS-003 and are not reproduced by the local root-alias regression test.
 
 ## Next action
 
-Review and commit only the eight intended modified/new files on `main`, push to `origin/main` as authorized, then inspect the fresh CI matrix and logs. Fix any remaining reproduced failures and update this checkpoint with the final commit SHA and CI result.
+Commit only `backend/agent.py`, `tests/test_agent_files.py`, and this checkpoint update on `main`; push to `origin/main`, then inspect all six fresh CI job logs. Fix any remaining reproduced failures and update this checkpoint with the final commit SHA and CI result.

@@ -73,8 +73,13 @@ def _is_protected_file(path: Path) -> bool:
     return path.name in IGNORED_FILES or any(pattern.fullmatch(path.name) or pattern.match(path.name) for pattern in PROTECTED_FILE_PATTERNS)
 
 
+def _workspace_root(root: Path) -> Path:
+    """Return one stable absolute spelling without resolving filesystem aliases."""
+    return Path(os.path.abspath(root))
+
+
 def _read_workspace_bytes(root: Path, path: Path, limit: int) -> bytes:
-    relative = path.relative_to(root.resolve()).as_posix()
+    relative = path.relative_to(_workspace_root(root)).as_posix()
     try:
         return workspace_fs.read_bytes(root, relative, limit)
     except FileNotFoundError:
@@ -144,25 +149,22 @@ def _safe_path(root: Path, relative: str | None) -> Path:
     if not isinstance(relative, str) or not relative.strip() or len(relative) > 1000:
         raise ValueError("Provide a valid project-relative path.")
     requested = Path(relative)
-    if requested.is_absolute() or ".." in requested.parts:
+    if requested.is_absolute() or requested.drive or ".." in requested.parts:
         raise ValueError("Path must stay inside the project workspace.")
-    root_resolved = root.resolve()
-    candidate_path = root_resolved / requested
+    root_base = _workspace_root(root)
+    candidate_path = root_base / requested
 
     # Reject symlinks before resolving the path. Resolving first would silently
     # turn a symlink target into an ordinary in-workspace path and permit writes
     # through the link.
-    current = root_resolved
+    current = root_base
     for part in requested.parts:
         current = current / part
         if current.is_symlink():
             raise ValueError("Access through symbolic links is disabled.")
 
-    candidate = candidate_path.resolve()
-    try:
-        relative_parts = candidate.relative_to(root_resolved).parts
-    except ValueError as exc:
-        raise ValueError("Path is outside the project workspace.") from exc
+    candidate = candidate_path
+    relative_parts = requested.parts
     if any(_is_ignored_dir(part) for part in relative_parts) or _is_protected_file(candidate):
         raise ValueError("Access to this project path is disabled.")
     try:
@@ -176,7 +178,7 @@ def _safe_path(root: Path, relative: str | None) -> Path:
 def _write_text_atomically(path: Path, content: str, root: Path | None = None) -> None:
     """Replace a workspace text file atomically so failed writes cannot truncate it."""
     if root is not None:
-        relative = path.relative_to(root.resolve()).as_posix()
+        relative = path.relative_to(_workspace_root(root)).as_posix()
         workspace_fs.atomic_write(root, relative, content.encode("utf-8"))
         return
     temporary_path = None
@@ -214,7 +216,7 @@ def _write_text_atomically(path: Path, content: str, root: Path | None = None) -
 
 
 def _visible_files(root: Path, directory: str = ""):
-    base = _safe_path(root, directory) if directory else root.resolve()
+    base = _safe_path(root, directory) if directory else _workspace_root(root)
     if not base.is_dir():
         raise ValueError("Directory does not exist.")
     for current, dirs, files in os.walk(base, followlinks=False):
@@ -247,7 +249,7 @@ def _record_checkpoint(session_id: str | None, root: Path, path: Path, group_id:
     if not session or Path(session["workspace"]).resolve() != root.resolve():
         raise ValueError("Agent session was not found for this workspace.")
     existed = path.exists()
-    relative = path.relative_to(root.resolve()).as_posix()
+    relative = path.relative_to(_workspace_root(root)).as_posix()
     previous = _read_workspace_bytes(root, path, MAX_FILE_BYTES) if existed else None
     if previous is not None and len(previous) > MAX_FILE_BYTES:
         raise ValueError("Files larger than 200 KB cannot be checkpointed or edited.")
@@ -486,7 +488,7 @@ def run_tool(
                         budget_truncated = True
                         break
                     task_budget["files_scanned"] = task_budget.get("files_scanned", 0) + 1
-                files.append(path.relative_to(root).as_posix())
+                files.append(path.relative_to(_workspace_root(root)).as_posix())
                 if len(files) >= 501:
                     break
             return json.dumps({"files": files[:500], "truncated": budget_truncated or len(files) > 500})
@@ -527,7 +529,7 @@ def run_tool(
                         task_budget["file_bytes_read"] = task_budget.get("file_bytes_read", 0) + len(data)
                     for line_no, line in enumerate(data.decode("utf-8").splitlines(), 1):
                         if query.casefold() in line.casefold():
-                            matches.append({"path": path.relative_to(root).as_posix(), "line": line_no, "text": line[:500]})
+                            matches.append({"path": path.relative_to(_workspace_root(root)).as_posix(), "line": line_no, "text": line[:500]})
                             if len(matches) >= 100:
                                 return json.dumps({"matches": matches, "truncated": True})
                 except (UnicodeDecodeError, OSError):
@@ -548,7 +550,7 @@ def run_tool(
             if actual != 1:
                 raise ValueError(f"Diff preview requires exactly one match; found {actual}. No changes were made.")
             updated = original.replace(old_text, new_text, 1)
-            relative = path.relative_to(root.resolve()).as_posix()
+            relative = path.relative_to(_workspace_root(root)).as_posix()
             patch = "".join(difflib.unified_diff(
                 original.splitlines(keepends=True), updated.splitlines(keepends=True),
                 fromfile="a/" + relative, tofile="b/" + relative,
@@ -571,7 +573,7 @@ def run_tool(
                 raise ValueError("Path points to a directory.")
             checkpoint_id = _record_checkpoint(session_id, root, path, checkpoint_group_id)
             _write_text_atomically(path, content, root)
-            result = {"written": path.relative_to(root).as_posix(), "bytes": len(content.encode("utf-8"))}
+            result = {"written": path.relative_to(_workspace_root(root)).as_posix(), "bytes": len(content.encode("utf-8"))}
             if checkpoint_id:
                 result["checkpoint_id"] = checkpoint_id
             return json.dumps(result)
@@ -597,7 +599,7 @@ def run_tool(
                 raise ValueError("Edited file would exceed the 200 KB limit.")
             checkpoint_id = _record_checkpoint(session_id, root, path, checkpoint_group_id)
             _write_text_atomically(path, updated, root)
-            result = {"written": path.relative_to(root).as_posix(), "replacements": actual}
+            result = {"written": path.relative_to(_workspace_root(root)).as_posix(), "replacements": actual}
             if checkpoint_id:
                 result["checkpoint_id"] = checkpoint_id
             return json.dumps(result)
@@ -674,7 +676,7 @@ def restore_checkpoint_group(session_id: str, group_id: str, root: Path) -> dict
 def _restore_checkpoint_batch(session_id: str, entries: list[tuple[dict, str]], root: Path, grouped: bool) -> dict:
     """Validate and snapshot every target before applying a restore as one batch."""
     store = get_agent_store()
-    root_resolved = root.resolve()
+    root_resolved = _workspace_root(root)
     with _RESTORE_LOCKS_GUARD:
         lock = _RESTORE_LOCKS.setdefault(session_id, threading.Lock())
     if not lock.acquire(blocking=False):
