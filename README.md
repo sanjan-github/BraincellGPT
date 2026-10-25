@@ -11,6 +11,7 @@ A self-hosted, local-first conversational AI interface built with zero external 
 
 ## Table of Contents
 
+- [Introduction & Purpose](#introduction--purpose)
 - [Overview](#overview)
 - [Key Features](#key-features)
 - [Architecture & Privacy](#architecture--privacy)
@@ -22,6 +23,14 @@ A self-hosted, local-first conversational AI interface built with zero external 
 - [Development and Testing](#development-and-testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## Introduction & Purpose
+
+BrainCellGPT was created as a lighthearted, humorous, and delightfully chaotic conversational assistant built purely for entertainment and killing time. Rather than attempting to be an enterprise productivity copilot or rigid coding agent, BrainCellGPT embraces absurd questions, strange tangents, playful banter, and unstructured conversations where having a single collective brain cell is more than enough.
+
+Despite its humorous and casual personality, the project is engineered with serious technical principles: local-first privacy, zero third-party Python dependencies, strict in-memory credential safety, and support for over 15 distinct AI providers.
 
 ---
 
