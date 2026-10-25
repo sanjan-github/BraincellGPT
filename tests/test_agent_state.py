@@ -141,6 +141,35 @@ class AgentCheckpointTests(unittest.TestCase):
         self.assertEqual(second.read_text(encoding="utf-8"), "second changed\n")
         self.assertEqual(len(self.store.list_checkpoints(self.session_id)), baseline_count)
 
+    def test_group_restore_removes_redo_snapshots_when_snapshot_creation_fails(self):
+        first = self.root / "first.txt"
+        second = self.root / "second.txt"
+        first.write_text("first before\n", encoding="utf-8")
+        second.write_text("second before\n", encoding="utf-8")
+        group_id = "c" * 32
+        with patch("backend.agent.get_agent_store", return_value=self.store):
+            for path, content in (("first.txt", "first changed\n"), ("second.txt", "second changed\n")):
+                run_tool("write_file", {"path": path, "content": content}, self.root, True,
+                         session_id=self.session_id, checkpoint_group_id=group_id)
+            baseline_count = len(self.store.list_checkpoints(self.session_id))
+            add_checkpoint = self.store.add_checkpoint
+            calls = 0
+
+            def fail_second_snapshot(*args, **kwargs):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("injected checkpoint storage failure")
+                return add_checkpoint(*args, **kwargs)
+
+            with patch.object(self.store, "add_checkpoint", side_effect=fail_second_snapshot):
+                with self.assertRaisesRegex(OSError, "injected checkpoint storage failure"):
+                    restore_checkpoint_group(self.session_id, group_id, self.root)
+
+        self.assertEqual(first.read_text(encoding="utf-8"), "first changed\n")
+        self.assertEqual(second.read_text(encoding="utf-8"), "second changed\n")
+        self.assertEqual(len(self.store.list_checkpoints(self.session_id)), baseline_count)
+
 
 if __name__ == "__main__":
     unittest.main()

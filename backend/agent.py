@@ -713,15 +713,19 @@ def _restore_checkpoint_batch(session_id: str, entries: list[tuple[dict, str]], 
                 target_text = None
             prepared.append((path, current_text, target_text, missing_parents))
 
-        for path, current_text, _target_text, _missing_parents in prepared:
-            redo_id = store.add_checkpoint(
-                session_id,
-                path.relative_to(root_resolved).as_posix(),
-                current_text.encode("utf-8") if current_text is not None else None,
-                current_text is not None,
-                redo_group_id,
-            )
-            created_redo_ids.append(redo_id)
+        try:
+            for path, current_text, _target_text, _missing_parents in prepared:
+                redo_id = store.add_checkpoint(
+                    session_id,
+                    path.relative_to(root_resolved).as_posix(),
+                    current_text.encode("utf-8") if current_text is not None else None,
+                    current_text is not None,
+                    redo_group_id,
+                )
+                created_redo_ids.append(redo_id)
+        except Exception:
+            store.delete_checkpoints(created_redo_ids)
+            raise
 
         try:
             for path, _current_text, target_text, _missing_parents in prepared:
