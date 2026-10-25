@@ -1,7 +1,7 @@
 # BrainCellGPT
 
 A funny, chaotic chatbot with one braincell remaining.
-A self-hosted, local-first conversational AI interface built with zero external Python dependencies.
+And a self-hosted, local-first conversational AI interface built with zero external Python dependencies.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
