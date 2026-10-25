@@ -89,8 +89,9 @@ and extension-host APIs are outside this backend port.
    workstation can only provide Windows execution evidence.
 4. Configure credentials and endpoints to run opt-in provider, MCP, and OAuth
    integration tests against real services. These tests skip when secrets are
-   absent; OAuth checks live discovery and PKCE metadata rather than completing
-   an interactive authorization-code exchange.
+   absent; OAuth unit tests cover discovery, state-bound PKCE callbacks, and
+   authorization-code exchange, while the opt-in live OAuth check validates
+   remote discovery metadata.
 5. Add per-user identity, authorization, and data partitioning before using the
    shared-token remote mode for a multi-user deployment.
 

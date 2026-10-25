@@ -13,6 +13,15 @@ class WorkspacePathError(ValueError):
     pass
 
 
+# ``os.supports_dir_fd`` contains the original builtin function objects. Tests
+# and embedders may wrap ``os.open`` to observe filesystem operations; checking
+# the set after such a wrapper is installed would incorrectly disable the
+# anchored implementation for the duration of that wrapper.
+_HAS_DIRFD_OPEN = os.open in os.supports_dir_fd
+_HAS_DIRFD_STAT = os.stat in os.supports_dir_fd
+_HAS_DIRFD_UNLINK = os.unlink in os.supports_dir_fd
+
+
 def _parts(relative: str) -> tuple[tuple[str, ...], str]:
     if not isinstance(relative, str) or not relative or "\x00" in relative:
         raise WorkspacePathError("Invalid workspace-relative path.")
@@ -24,7 +33,7 @@ def _parts(relative: str) -> tuple[tuple[str, ...], str]:
 
 
 def _supports_dirfd() -> bool:
-    return os.name != "nt" and os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd and os.unlink in os.supports_dir_fd
+    return os.name != "nt" and _HAS_DIRFD_OPEN and _HAS_DIRFD_STAT and _HAS_DIRFD_UNLINK
 
 
 def _remove_created_directories(root: Path, created: list[tuple[str, ...]]) -> None:

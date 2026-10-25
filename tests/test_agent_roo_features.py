@@ -74,6 +74,7 @@ class AgentModeTests(unittest.TestCase):
                 "write_file", {"path": "plan.md", "content": "plan"}, root,
                 allow_edits=True, mode="architect",
             ))
+            self.assertIn("written", result, result.get("error", str(result)))
             self.assertEqual(result["written"], "plan.md")
             rejected = json.loads(run_tool(
                 "write_file", {"path": "main.py", "content": "bad"}, root,
@@ -95,6 +96,7 @@ class AgentEditingToolTests(unittest.TestCase):
                 {"path": "sample.txt", "old_text": "beta", "new_text": "gamma"},
                 root, allow_edits=True,
             ))
+            self.assertIn("replacements", result, result.get("error", str(result)))
             self.assertEqual(result["replacements"], 1)
             self.assertEqual(target.read_text(encoding="utf-8"), "alpha\ngamma\n")
 

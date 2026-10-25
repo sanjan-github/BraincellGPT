@@ -628,7 +628,15 @@ def run_tool(
             requested_mode = normalize_mode(args.get("mode"))
             return json.dumps({"mode": requested_mode, "label": MODES[requested_mode]["label"]})
         return json.dumps({"error": "Unknown tool."})
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
+        if isinstance(exc, FileNotFoundError):
+            error = "Workspace path changed or is no longer available."
+        elif isinstance(exc, PermissionError):
+            error = "Workspace operation was denied by the filesystem."
+        else:
+            error = f"Workspace operation failed with OS error {exc.errno}."
+        return json.dumps({"error": error})
+    except ValueError as exc:
         return json.dumps({"error": str(exc)})
 
 

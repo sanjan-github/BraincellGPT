@@ -64,6 +64,12 @@ Roo Code parity work and remaining scope are tracked in
   restore are implemented.
 - A client could submit fabricated history. Production systems should load conversation
   messages server-side after authorization.
+- Workspace reads verify the opened file handle. On Windows, workspace writes
+  use an atomic temporary-file replacement, but the final replacement and file
+  deletion still resolve their parent directories by path. A hostile concurrent
+  directory or reparse-point swap can race those operations; the implementation
+  does not provide the same directory-handle confinement as the POSIX dirfd
+  path.
 - Saved profile keys live only in server process memory; they are not written to disk,
   returned to the browser, or included in chat requests. They are cleared on shutdown.
 - Profile names and nonsecret settings are kept in browser `sessionStorage`.

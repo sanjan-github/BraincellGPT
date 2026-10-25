@@ -43,6 +43,7 @@ class AgentWorkspaceSafetyTests(unittest.TestCase):
         (self.root / "visible.txt").write_text("needle-visible", encoding="utf-8")
 
         listed = json.loads(run_tool("list_files", {}, self.root, allow_edits=False))
+        self.assertIn("files", listed, listed.get("error", str(listed)))
         self.assertEqual(listed["files"], ["visible.txt"])
 
         searched = json.loads(run_tool(
@@ -62,6 +63,20 @@ class AgentWorkspaceSafetyTests(unittest.TestCase):
             "read_file", {"path": "credentials.txt"}, self.root, allow_edits=False
         ))
         self.assertIn("error", result)
+
+    def test_read_race_error_does_not_expose_absolute_workspace_path(self):
+        target = self.root / "visible.txt"
+        target.write_text("visible", encoding="utf-8")
+        with patch(
+            "backend.agent.workspace_fs.read_bytes",
+            side_effect=FileNotFoundError(2, "No such file or directory", str(target)),
+        ):
+            result = json.loads(run_tool(
+                "read_file", {"path": "visible.txt"}, self.root, allow_edits=False,
+            ))
+
+        self.assertIn("changed or is no longer available", result["error"])
+        self.assertNotIn(str(self.root), result["error"])
 
     def test_write_rejects_path_outside_workspace(self):
         outside = self.root.parent / (self.root.name + "-outside.txt")
@@ -111,6 +126,11 @@ class AgentWorkspaceSafetyTests(unittest.TestCase):
             task_budget=budget,
         ))
         self.assertIn("cumulative file-read limit", result["error"])
+
+    @unittest.skipUnless(workspace_fs._supports_dirfd(), "Anchored dirfd operations are POSIX-only")
+    def test_dirfd_capability_survives_os_open_wrapper(self):
+        with patch("backend.workspace_fs.os.open", wraps=workspace_fs.os.open):
+            self.assertTrue(workspace_fs._supports_dirfd())
 
     @unittest.skipUnless(workspace_fs._supports_dirfd(), "Anchored dirfd operations are POSIX-only")
     def test_read_stays_on_open_directory_if_path_is_swapped_to_symlink(self):

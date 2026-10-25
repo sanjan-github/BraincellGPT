@@ -67,7 +67,9 @@ class AgentCheckpointTests(unittest.TestCase):
                 "write_file", {"path": "source.py", "content": "after = True\n"},
                 self.root, allow_edits=True, session_id=self.session_id,
             )
-            checkpoint_id = json.loads(result)["checkpoint_id"]
+            payload = json.loads(result)
+            self.assertIn("checkpoint_id", payload, payload.get("error", str(payload)))
+            checkpoint_id = payload["checkpoint_id"]
             restored = restore_checkpoint(self.session_id, checkpoint_id, self.root)
 
         self.assertEqual(target.read_text(encoding="utf-8"), "before = True\n")
@@ -80,7 +82,9 @@ class AgentCheckpointTests(unittest.TestCase):
                 "write_file", {"path": "new.txt", "content": "new"},
                 self.root, allow_edits=True, session_id=self.session_id,
             )
-            checkpoint_id = json.loads(result)["checkpoint_id"]
+            payload = json.loads(result)
+            self.assertIn("checkpoint_id", payload, payload.get("error", str(payload)))
+            checkpoint_id = payload["checkpoint_id"]
             restore_checkpoint(self.session_id, checkpoint_id, self.root)
 
         self.assertFalse((self.root / "new.txt").exists())
