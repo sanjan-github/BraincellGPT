@@ -2,7 +2,7 @@
 
 ## Current status
 
-- Status: IN PROGRESS pending fresh CI.
+- Status: VERIFIED for implementation commit `1d34735c1a886a67ef7975cf8a0cab0d84c860a1`.
 - Baseline: `main` at `ea340f3d7a9e35f40b3fc949a48c9df5a916f31a`; working tree was clean before this task. No pre-existing user changes were present. Changes are limited to chat prompt/provider handling, conversation allowance persistence, chat UI, related tests, smoke coverage, and affected documentation.
 - Latest baseline CI: exact baseline commit `ea340f3d7a9e35f40b3fc949a48c9df5a916f31a` passed all six app jobs in run [40178397913](https://github.com/sanjan-github/BraincellGPT/actions/runs/40178397913). This predates the changes below; fresh CI is pending.
 - Baseline focused tests: `python -m unittest tests.test_app tests.test_chat_ui tests.test_request_security -q` passed 46 tests.
@@ -55,12 +55,17 @@
 - Node inline-script syntax check: passed for one script block.
 - `git diff --check`: passed.
 - CI-matching `git grep` secret scan on staged files: no matches.
+- Fresh CI for implementation commit `1d34735c1a886a67ef7975cf8a0cab0d84c860a1`: run [40185527441](https://github.com/sanjan-github/BraincellGPT/actions/runs/40185527441), success. All six application jobs passed on Ubuntu, Windows, and macOS for Python 3.11 and 3.12. For each job, syntax compilation, UI presence, unit/security/native credential-store tests, tracked-file secret scanning, and clean-install HTTP smoke passed. Individual job summaries/logs were inspected. The opt-in live provider/MCP/OAuth job was skipped for the push event.
 - Browser visual QA: NOT VERIFIED; local browser navigation was blocked by the browser environment.
 - Live provider/model behavior: NOT VERIFIED for this change; payload contracts and error paths are mock-tested. Existing release-time single Groq spot check predates this change.
 
 ## Remaining work
 
-- Run the final focused and full suites, Pyright, compileall, clean-install smoke, secret scan, and diff check after all edits.
-- Review the final diff; commit only the scoped chat fixes on `main`, push using the existing workflow, then inspect the fresh CI run and all six app jobs.
+- Implementation changes are committed and pushed on `main`; only the checkpoint has changed after local verification to record the fresh CI result.
 - Browser desktop/mobile behavior remains unverified if the local browser restriction persists.
 - Provider behavior style remains dependent on each selected model; live integrations are not part of the default CI workflow.
+
+## Completion
+
+- Commit `1d34735c1a886a67ef7975cf8a0cab0d84c860a1` is on `main`; the implementation commit's fresh CI run passed all six application jobs.
+- No remaining confirmed implementation defect was found in the requested chat improvements. Browser visual QA and live provider behavior remain specifically unverified as described above.
