@@ -2,8 +2,8 @@
 
 ## Baseline
 
-- Status: IN PROGRESS (local verification passed for FS-004; fresh CI pending)
-- Branch / HEAD at resumed audit: `main` / `61ab0345a0f0f1c973bc6902602849726972c277`; matches `origin/main`, working tree clean.
+- Status: VERIFIED (local verification and fresh CI passed; see documented limitations)
+- Branch: `main`; verified code HEAD `6a53ed75cb6c7afe37ef6cb2de8189dc01252da2` matches `origin/main` (this checkpoint is being updated in a follow-up documentation commit).
 - Working tree was clean at start; no pre-existing uncommitted changes.
 - Instructions: user supplied `AGENTS.md` reference to `C:\Users\TestUser\.codex\RTK.md`; no repository `AGENTS.md` or `CLAUDE.md` found.
 - Initial Python: 3.14.6. CI Python 3.11 and 3.12 installed with `uv` for verification.
@@ -20,7 +20,7 @@
 - D filesystem security and cross-platform correctness: VERIFIED with documented Windows write/delete race limitation; POSIX race tests passed on hosted Linux/macOS.
 - E HTTP API, streaming, approvals: VERIFIED by route/code review and tests; checkpoint restore partial-storage failure fixed and verified (FS-004).
 - F providers and supporting backend modules: VERIFIED by code review and full test suites on Windows Python 3.11/3.12; live integrations remain untested.
-- Final verification: IN PROGRESS (new checkpoint-storage failure fix awaits fresh CI)
+- Final verification: VERIFIED (local checks and fresh CI passed)
 
 ## Confirmed defects and fixes
 
@@ -62,7 +62,7 @@
 - Reproduction: inject an `OSError` on the second `AgentStore.add_checkpoint` while restoring a two-file checkpoint group; before the fix, the workspace stayed unchanged but the checkpoint count increased from 2 to 3.
 - Root cause: redo snapshots were inserted one at a time before the protected filesystem restore block, and failure during a later insertion did not delete earlier redo snapshots.
 - Fix: on redo-snapshot creation failure, delete any redo checkpoint IDs already created, then re-raise the original exception. Added `test_group_restore_removes_redo_snapshots_when_snapshot_creation_fails`.
-- Verification: focused regression and all seven tests in `test_agent_state.py` pass on Python 3.11; full unittest and pytest suites, Pyright, and compileall pass locally. Fresh CI is pending.
+- Verification: focused regression and all seven tests in `test_agent_state.py` pass on Python 3.11; full unittest and pytest suites, Pyright, and compileall pass locally. Fresh CI `40175276320` passed all six application jobs.
 
 ## Verified limitation
 
@@ -101,6 +101,7 @@
 - Fresh run `40174307311` for `690ccf4` had all six unit-test jobs pass; all six syntax and secret-scan steps passed. Ubuntu and Windows clean-install smoke passed. Both macOS clean-install smoke steps timed out at the 20-second readiness limit, including on the failed-job rerun. The 60-second change is local and awaits fresh CI.
 - Final fresh CI run `40174615797`: https://github.com/sanjan-github/BraincellGPT/actions/runs/40174615797. All six application jobs passed on Ubuntu, Windows, and macOS with Python 3.11/3.12. Each passed syntax compilation, web UI presence, unit tests, tracked-file secret scan, and clean-install HTTP smoke. The opt-in live integration job was skipped by its `workflow_dispatch` condition.
 - Fresh CI `40174752640` for exact SHA `61ab0345a0f0f1c973bc6902602849726972c277` passed all six application jobs; opt-in live integrations were skipped.
+- After FS-004, commit `6a53ed75cb6c7afe37ef6cb2de8189dc01252da2` was pushed to `main`. Fresh CI run `40175276320`: https://github.com/sanjan-github/BraincellGPT/actions/runs/40175276320; all six application jobs passed, and the opt-in live integrations were skipped.
 - Resumed audit defect reproduction: injected second redo-snapshot storage failure yielded `checkpoints_before=2 checkpoints_after=3` before FS-004.
 - After FS-004: `uv run --python 3.11 python -m unittest tests.test_agent_state.AgentCheckpointTests.test_group_restore_removes_redo_snapshots_when_snapshot_creation_fails -v` passed; `uv run --python 3.11 python -m unittest discover -s tests -p test_agent_state.py -v` passed 7 tests.
 - Full post-fix local verification: `uv run --python 3.11 python -m unittest discover -s tests -q` passed (179 run, 8 skipped); `uv run --python 3.11 --with pytest python -m pytest -q` passed (171 passed, 8 skipped, 62 subtests); `uvx --from pyright pyright --pythonversion 3.11 app.py backend tests` reported 0 diagnostics; `uv run --python 3.11 python -m compileall -q app.py backend tests scripts` passed; `git diff --check` passed.
@@ -111,4 +112,4 @@
 
 ## Next action
 
-Next: commit and push only `backend/agent.py`, `tests/test_agent_state.py`, and this checkpoint update on `main`; inspect fresh CI for the restore cleanup change. Remaining limitations: Windows replacement and deletion remain vulnerable to hostile parent-directory/reparse-point races, as described in `docs/architecture.md`; POSIX race tests passed in Linux/macOS CI but cannot run on this local Windows host. Live external provider/MCP/OAuth checks were skipped because CI only runs them on manual dispatch with configured secrets.
+No remaining implementation action. Remaining limitations: Windows replacement and deletion remain vulnerable to hostile parent-directory/reparse-point races, as described in `docs/architecture.md`; POSIX race tests passed in Linux/macOS CI but cannot run on this local Windows host. Live external provider/MCP/OAuth checks were skipped because CI only runs them on manual dispatch with configured secrets. Provider, MCP, OAuth, credential, approval, and remote-exposure findings in this checkpoint are code-review/unit-test evidence, not live deployment verification.
