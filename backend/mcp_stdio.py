@@ -13,7 +13,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 from backend.provider_http import PROVIDER_SLOTS, open_provider_request, resolve_public_addresses
@@ -299,8 +299,8 @@ def _schema_is_bounded(schema: dict, max_depth: int = 40) -> bool:
             return False
         if isinstance(value, dict):
             stack.extend((child, depth + 1) for child in value.values())
-        elif isinstance(value, list):
-            stack.extend((child, depth + 1) for child in value)
+        elif isinstance(value, (list, tuple)):
+            stack.extend((child, depth + 1) for child in cast(list[Any], value))
     return True
 
 
@@ -414,6 +414,8 @@ def _resource_tool_definitions(server: str) -> list[dict]:
 class _StdioClient:
     def __init__(self, spec: MCPServerSpec, parent_env: dict[str, str], cwd: Path):
         self.spec = spec
+        if not spec.command:
+            raise ValueError("Stdio MCP server spec requires a command.")
         child_env = _safe_child_environment(parent_env, spec.env)
         executable = shutil.which(spec.command, path=child_env.get("PATH"))
         if executable is None:
@@ -526,7 +528,7 @@ class _StdioClient:
 
     def _notify(self, method: str, params: dict | None = None) -> None:
         assert self.process.stdin is not None
-        frame = {"jsonrpc": "2.0", "method": method}
+        frame: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
         if params is not None:
             frame["params"] = params
         self.process.stdin.write(json.dumps(frame, separators=(",", ":")).encode() + b"\n")
@@ -713,17 +715,17 @@ class _StreamableHTTPClient:
                 "MCP-Protocol-Version": MODERN_VERSION,
                 "Mcp-Method": method,
             })
-            if method == "tools/call" and isinstance(params.get("name"), str):
+            if method == "tools/call" and isinstance(params, dict) and isinstance(params.get("name"), str):
                 name_header = _mcp_header_value(params["name"])
                 if len(name_header) > 4000:
                     raise ValueError("MCP request name exceeds the header size limit.")
                 headers["Mcp-Name"] = name_header
-            elif method == "resources/read" and isinstance(params.get("uri"), str):
+            elif method == "resources/read" and isinstance(params, dict) and isinstance(params.get("uri"), str):
                 name_header = _mcp_header_value(params["uri"])
                 if len(name_header) > 4000:
                     raise ValueError("MCP resource URI exceeds the header size limit.")
                 headers["Mcp-Name"] = name_header
-            elif method == "prompts/get" and isinstance(params.get("name"), str):
+            elif method == "prompts/get" and isinstance(params, dict) and isinstance(params.get("name"), str):
                 name_header = _mcp_header_value(params["name"])
                 if len(name_header) > 4000:
                     raise ValueError("MCP prompt name exceeds the header size limit.")
@@ -732,6 +734,7 @@ class _StreamableHTTPClient:
             headers["MCP-Protocol-Version"] = self.protocol_version
             if self.session_id:
                 headers["Mcp-Session-Id"] = self.session_id
+        assert self.spec.url is not None
         if self._oauth_authorized:
             try:
                 token = oauth_access_token(self.spec.url, None, self.oauth_port, self.spec.oauth_client_id,
@@ -915,7 +918,7 @@ class _StreamableHTTPClient:
         return self._request_result("resources/read", {"uri": uri})
 
     def close(self) -> None:
-        if self.era != "legacy" or not self.session_id:
+        if self.era != "legacy" or not self.session_id or not self.spec.url:
             return
         headers = {**self.headers, "Mcp-Session-Id": self.session_id}
         request = urllib.request.Request(self.spec.url, headers=headers, method="DELETE")

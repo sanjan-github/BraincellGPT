@@ -1,4 +1,4 @@
-﻿"""Workspace file operations anchored to directory handles where the OS supports it."""
+"""Workspace file operations anchored to directory handles where the OS supports it."""
 from __future__ import annotations
 
 import os
@@ -28,7 +28,7 @@ def _supports_dirfd() -> bool:
 
 
 def _remove_created_directories(root: Path, created: list[tuple[str, ...]]) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     for components in reversed(created):
         parent_fd = None
         try:
@@ -45,14 +45,14 @@ def _remove_created_directories(root: Path, created: list[tuple[str, ...]]) -> N
                 os.close(parent_fd)
 
 
-def _open_parent(root: Path, relative: str, create: bool = False) -> tuple[int, str, list[str]]:
+def _open_parent(root: Path, relative: str, create: bool = False) -> tuple[int, str, list[tuple[str, ...]]]:
     parents, leaf = _parts(relative)
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
     if not hasattr(os, "O_NOFOLLOW"):
         raise WorkspacePathError("This operating system cannot safely open workspace directories.")
-    flags |= os.O_NOFOLLOW
+    flags |= getattr(os, "O_NOFOLLOW", 0)
     current_fd = os.open(root.resolve(strict=True), flags)
-    created = []
+    created: list[tuple[str, ...]] = []
     try:
         for index, component in enumerate(parents):
             try:
@@ -76,7 +76,7 @@ def read_bytes(root: Path, relative: str, limit: int) -> bytes:
         parent_fd, leaf, _ = _open_parent(root, relative)
         file_fd = None
         try:
-            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW
+            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
             file_fd = os.open(leaf, flags, dir_fd=parent_fd)
             info = os.fstat(file_fd)
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
@@ -127,7 +127,7 @@ def atomic_write(root: Path, relative: str, content: bytes, existing_mode: int |
                     raise WorkspacePathError("Workspace writes require a regular file without hard links.")
                 existing_mode = stat.S_IMODE(info.st_mode)
             mode = existing_mode if existing_mode is not None else 0o600
-            temp_fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode, dir_fd=parent_fd)
+            temp_fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode, dir_fd=parent_fd)
             with os.fdopen(temp_fd, "wb", closefd=True) as target:
                 temp_fd = None
                 target.write(content)

@@ -30,6 +30,7 @@ class AgentSessionStoreTests(unittest.TestCase):
 
         reloaded = AgentStore(self.store.path)
         session = reloaded.get_session(session_id)
+        assert session is not None
         self.assertEqual(session["title"], "A persistent task")
         self.assertEqual(session["base_url"], "https://api.example/v1")
         self.assertEqual(reloaded.history(session_id), [

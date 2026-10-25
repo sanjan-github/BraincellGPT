@@ -122,8 +122,9 @@ class PinnedHttpsConnectionTests(unittest.TestCase):
             ((socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, ("93.184.216.34", 443)),)
         )
 
-        self.assertEqual(handler._context.verify_mode, ssl.CERT_REQUIRED)
-        self.assertTrue(handler._context.check_hostname)
+        ctx = getattr(handler, "_context")
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(ctx.check_hostname)
 
     def test_pinned_opener_disables_proxies_and_redirects(self):
         request = urllib.request.Request("https://provider.example/v1")

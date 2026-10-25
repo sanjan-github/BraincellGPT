@@ -275,6 +275,7 @@ class MCPStdioClientTests(unittest.TestCase):
         spec = load_server_specs({"BRAINCELLGPT_MCP_SERVERS": json.dumps([{
             "name": "remote", "url": "https://mcp.example.test/mcp",
         }])})[0]
+        assert spec.url is not None
         error_body = io.BytesIO(b"provider unavailable")
         error = urllib.error.HTTPError(
             spec.url, 500, "Internal Server Error", email.message.Message(), error_body,

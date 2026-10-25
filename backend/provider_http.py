@@ -8,6 +8,7 @@ import socket
 import ssl
 import urllib.request
 from threading import BoundedSemaphore
+from typing import Any
 
 
 # One process-wide cap shared by chat and coding-agent provider requests.
@@ -84,7 +85,7 @@ def _connect_to_pinned_address(connection, addresses):
         sock = None
         try:
             sock = socket.socket(family, socktype, proto)
-            if connection.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+            if connection.timeout is not getattr(socket, "_GLOBAL_DEFAULT_TIMEOUT", object()):
                 sock.settimeout(connection.timeout)
             if connection.source_address:
                 sock.bind(connection.source_address)
@@ -112,7 +113,8 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         sock = _connect_to_pinned_address(self, self._validated_addresses)
         # `self.host` is still the original URL hostname, so the default SSL
         # context performs certificate hostname validation and sends correct SNI.
-        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+        ctx = getattr(self, "_context")
+        self.sock = ctx.wrap_socket(sock, server_hostname=self.host)
 
 
 class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
@@ -121,14 +123,14 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
         super().__init__(context=ssl.create_default_context())
         self._validated_addresses = addresses
 
-    def https_open(self, request):
+    def https_open(self, req: Any) -> Any:
         return self.do_open(
             lambda host, **kwargs: _PinnedHTTPSConnection(
                 host, addresses=self._validated_addresses, **kwargs
             ),
-            request,
-            context=self._context,
-            check_hostname=self._check_hostname,
+            req,
+            context=getattr(self, "_context", None),
+            check_hostname=getattr(self, "_check_hostname", None),
         )
 
 

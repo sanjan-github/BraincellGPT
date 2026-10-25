@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import unittest
@@ -18,7 +18,7 @@ class LiveProviderTests(unittest.TestCase):
             "Reply with the exact words live provider check passed.", [], "normal",
             provider=provider, user_api_key=api_key,
             base_url=os.environ.get("BRAINCELLGPT_LIVE_BASE_URL", ""),
-            model=os.environ.get("BRAINCELLGPT_LIVE_MODEL", ""),
+            model_override=os.environ.get("BRAINCELLGPT_LIVE_MODEL", ""),
         )
         self.assertIsInstance(reply, str)
         self.assertTrue(reply.strip())

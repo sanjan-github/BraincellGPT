@@ -140,7 +140,7 @@ def tools_for_mode(mode: str, allow_edits: bool, allow_commands: bool) -> list[d
     ]
 
 
-def _safe_path(root: Path, relative: str) -> Path:
+def _safe_path(root: Path, relative: str | None) -> Path:
     if not isinstance(relative, str) or not relative.strip() or len(relative) > 1000:
         raise ValueError("Provide a valid project-relative path.")
     requested = Path(relative)
@@ -1117,14 +1117,14 @@ def _summarize_agent_context(messages: list[dict], provider: str, endpoint: str,
     return True
 
 
-def _approval_preview(name: str, args: dict) -> dict:
+def _approval_preview(name: str, args: dict) -> dict[str, Any]:
     """Expose a bounded proposed-action preview for the local approval UI."""
     if name == "execute_command":
         return {"command": str(args.get("command", ""))[:2000]}
     if name.startswith("mcp__"):
         raw = json.dumps(args, ensure_ascii=False)
         return {"arguments_preview": raw[:4000], "truncated": len(raw) > 4000}
-    preview = {"path": str(args.get("path", ""))[:1000]}
+    preview: dict[str, Any] = {"path": str(args.get("path", ""))[:1000]}
     if name == "write_file":
         content = args.get("content", "")
         if isinstance(content, str):
@@ -1260,7 +1260,7 @@ def run_agent(
     if len(secret) > 500 or len(model_name) > 300:
         raise ValueError("Provider settings are too long.")
     system = _agent_system(mode, allow_edits, allow_commands, approval_callback is not None)
-    messages = [{"role": "system", "content": system}]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
     if not isinstance(history, list):
         history = []
     history_chars = 0
@@ -1316,6 +1316,8 @@ def run_agent(
                 else:
                     headers["Authorization"] = "Bearer " + secret
         request = urllib.request.Request(endpoint, data=json.dumps(payload).encode(), headers=headers, method="POST")
+        assistant: dict[str, Any] = {}
+        calls: list[Any] = []
         try:
             if not _PROVIDER_SLOTS.acquire(timeout=2):
                 raise ValueError("BrainCellGPT is busy handling other provider requests. Try again shortly.")
@@ -1338,9 +1340,14 @@ def run_agent(
             raise ValueError("Could not reach the selected provider.") from exc
         except json.JSONDecodeError as exc:
             raise ValueError("Provider returned invalid JSON.") from exc
-        if data is not None and provider == "anthropic":
+        if event_callback is not None:
+            # assistant and calls were populated by _read_anthropic_stream or _read_openai_stream
+            pass
+        elif provider == "anthropic":
+            assert data is not None
             assistant, calls = _anthropic_assistant(data)
-        elif data is not None:
+        else:
+            assert data is not None
             choices = data.get("choices") if isinstance(data, dict) else None
             if not choices or not isinstance(choices[0], dict) or not isinstance(choices[0].get("message"), dict):
                 raise ValueError("Provider returned an invalid agent response.")

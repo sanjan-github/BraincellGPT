@@ -221,7 +221,8 @@ class AgentEditingToolTests(unittest.TestCase):
             kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
             kernel32.WaitForSingleObject.restype = ctypes.c_ulong
             kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-            process_handle = kernel32.OpenProcess(0x1000, False, child_pid)
+            # PROCESS_QUERY_LIMITED_INFORMATION (0x1000) | SYNCHRONIZE (0x00100000)
+            process_handle = kernel32.OpenProcess(0x101000, False, child_pid)
             if process_handle:
                 wait_result = kernel32.WaitForSingleObject(process_handle, 1000)
                 kernel32.CloseHandle(process_handle)

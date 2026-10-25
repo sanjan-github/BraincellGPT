@@ -4,6 +4,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import app
@@ -34,7 +35,7 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
             }
 
             def is_trusted_local_request(self):
-                return app.Handler.is_trusted_local_request(self)
+                return app.Handler.is_trusted_local_request(cast(app.Handler, self))
 
             def require_authorization(self):
                 return True
@@ -44,7 +45,7 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
 
         request = RequestStub()
         with patch("app.generate_reply") as provider:
-            app.Handler.do_POST(request)
+            app.Handler.do_POST(cast(app.Handler, request))
 
         self.assertEqual(request.response[0], 403)
         self.assertIn("trusted loopback", request.response[1]["error"])
@@ -110,7 +111,9 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
                 body = response.read().decode()
             self.assertEqual(response.status, 200)
             self.assertIn("Authorization complete", body)
-            self.assertEqual(mcp_oauth._PENDING[state].token["access_token"], "callback-token")
+            pending_record = mcp_oauth._PENDING[state]
+            assert pending_record.token is not None
+            self.assertEqual(pending_record.token["access_token"], "callback-token")
         finally:
             mcp_oauth._PENDING.pop(state, None)
             connection.close()
@@ -337,6 +340,7 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
                     start = read_event()
                     tool_started = read_event()
                     approval = read_event()
+                    assert start is not None and tool_started is not None and approval is not None
                     self.assertEqual(start["type"], "start")
                     self.assertEqual(tool_started["type"], "tool_start")
                     self.assertEqual(approval["type"], "approval_required")
@@ -359,6 +363,7 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
                         decision.close()
 
                     done = read_event()
+                    assert done is not None
                     self.assertEqual(done["type"], "done")
                     self.assertEqual(done["result"]["reply"], "Approved.")
         finally:

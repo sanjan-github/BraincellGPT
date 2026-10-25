@@ -103,6 +103,7 @@ def _windows_set(name: str, value: str) -> bool:
     if len(raw) > MAX_SECRET_BYTES:
         return False
     path = _windows_credential_path(_account_name(name))
+    temp_path: Path | None = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         encrypted = _dpapi_protect(raw)
@@ -112,16 +113,17 @@ def _windows_set(name: str, value: str) -> bool:
         os.replace(temp_path, path)
         return True
     except OSError:
-        try:
-            temp_path.unlink(missing_ok=True)
-        except (UnboundLocalError, OSError):
-            pass
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
         return False
 
 
 def _keyring_backend():
     try:
-        import keyring
+        import keyring  # type: ignore[import-not-found]
         backend = keyring.get_keyring()
     except Exception:
         return None
