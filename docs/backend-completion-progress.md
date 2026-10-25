@@ -2,8 +2,8 @@
 
 ## Baseline
 
-- Status: IN PROGRESS
-- Branch / HEAD: `main` / `235dbca0696860e21e5744b98ce68c7016dd9738` (`cleared errors`)
+- Status: VERIFIED (repository test and configured CI checks passed; see limitations below)
+- Branch: `main`; implementation commit `5a6332b97baeb15b50db76efb315010661e71675` (`Allow more time for clean-install startup`) is pushed to `origin/main`. This checkpoint update is being committed separately.
 - Working tree was clean at start; no pre-existing uncommitted changes.
 - Instructions: user supplied `AGENTS.md` reference to `C:\Users\TestUser\.codex\RTK.md`; no repository `AGENTS.md` or `CLAUDE.md` found.
 - Initial Python: 3.14.6. CI Python 3.11 and 3.12 installed with `uv` for verification.
@@ -15,12 +15,12 @@
 ## Phases
 
 - A baseline and diagnostics: VERIFIED
-- B reported CI failures: IN PROGRESS (filesystem fixes passed CI; clean-install smoke timeout needs fresh CI after widening its startup window)
+- B reported CI failures: VERIFIED (fresh CI run passed all six OS/Python jobs)
 - C agent tool contracts: VERIFIED by code review and full test suites on Windows Python 3.11/3.12
-- D filesystem security and cross-platform correctness: IN PROGRESS (POSIX race tests passed on Linux/macOS; Windows write/delete limitation remains documented)
+- D filesystem security and cross-platform correctness: VERIFIED with documented Windows write/delete race limitation; POSIX race tests passed on hosted Linux/macOS.
 - E HTTP API, streaming, approvals: VERIFIED by code review and full test suites on Windows Python 3.11/3.12
 - F providers and supporting backend modules: VERIFIED by code review and full test suites on Windows Python 3.11/3.12
-- Final verification: IN PROGRESS
+- Final verification: VERIFIED (local checks and fresh configured CI passed)
 
 ## Confirmed defects and fixes
 
@@ -46,7 +46,7 @@
 - Reproduction: CI run `40173975130`, Windows and macOS, with failures in file listing/search, search-replace, Architect writes, and checkpoint creation. Error payloads showed Windows 8.3 versus long paths and macOS `/var` versus `/private/var` spellings.
 - Root cause: the code resolved the root once and each child independently, then compared or relativized path strings. The OS returned different valid spellings for the same directory.
 - Fix: use a consistent absolute lexical workspace root for child construction and relative paths; reject absolute/drive-qualified paths and parent traversal; check each child component for symlinks. Actual file operations retain their existing no-follow/handle checks. Added a root-alias listing/search regression test.
-- Verification: focused tests pass on local Windows Python 3.11, 3.12, and 3.14; full suites pass locally. Fresh CI for this fix is pending.
+- Verification: focused tests pass on local Windows Python 3.11, 3.12, and 3.14; full suites pass locally. Fresh CI `40174615797` passed across Linux, Windows, and macOS on Python 3.11 and 3.12.
 
 ### CI-001 — clean-install smoke readiness timeout on macOS
 
@@ -54,7 +54,7 @@
 - Reproduction: CI run `40174307311` and its failed-job rerun, on macOS Python 3.11 and 3.12; both timed out waiting for `/health` after 20 seconds. Unit tests, secret scan, and smoke steps passed on Ubuntu and Windows.
 - Root cause: the smoke script's bounded 20-second startup allowance was insufficient on the macOS hosted runners. The script discards child output, so no application exception was reported; the same startup smoke passes locally.
 - Fix: extend the bounded readiness allowance to 60 seconds and update the timeout message.
-- Regression/verification: `uv run --python 3.11 python scripts/smoke_clean_install.py`, Python 3.12 equivalent, and `python scripts/smoke_clean_install.py` all pass locally. Fresh CI pending.
+- Regression/verification: `uv run --python 3.11 python scripts/smoke_clean_install.py`, Python 3.12 equivalent, and `python scripts/smoke_clean_install.py` all pass locally. Fresh CI `40174615797` passed all six smoke jobs.
 
 ## Verified limitation
 
@@ -66,7 +66,7 @@
 
 ## Verification this session
 
-- Current commit: `690ccf43f992ca8578a3e5e919138c1c8129ce7d`, pushed to `origin/main`; working tree currently has the smoke timeout and checkpoint update uncommitted. No unrelated changes were present.
+- Final implementation commit: `5a6332b97baeb15b50db76efb315010661e71675`, pushed to `origin/main`. Only authorized backend, tests, smoke-check, and progress-checkpoint changes were committed; no unrelated changes were present.
 - Fresh CI run for `95431bc`: https://github.com/sanjan-github/BraincellGPT/actions/runs/40173975130. Both Ubuntu jobs passed all tests, secret scan, and clean-install smoke. POSIX read/write path-swap race tests passed on Ubuntu and macOS. Both Windows jobs and both macOS jobs failed five agent filesystem operations because path aliases were compared as different directories. The tool assertions exposed the error payloads; the root cause and follow-up fix are recorded as FS-003. Live external integrations were skipped by workflow design.
 - After the FS-003 local fix, `uv run --python 3.11 python -m unittest discover -s tests -q`: 178 run, 8 skipped, success.
 - After the FS-003 local fix, `uv run --python 3.12 python -m unittest discover -s tests -q`: 178 run, 8 skipped, success.
@@ -82,7 +82,12 @@
 - `git diff --check`: success.
 - POSIX dirfd race tests passed on Linux/macOS CI for `95431bc`; local Windows cannot run them (no WSL or Docker). The Windows path-alias failures reproduced only on hosted runners before FS-003 and are not reproduced by the local root-alias regression test.
 - Fresh run `40174307311` for `690ccf4` had all six unit-test jobs pass; all six syntax and secret-scan steps passed. Ubuntu and Windows clean-install smoke passed. Both macOS clean-install smoke steps timed out at the 20-second readiness limit, including on the failed-job rerun. The 60-second change is local and awaits fresh CI.
+- Final fresh CI run `40174615797`: https://github.com/sanjan-github/BraincellGPT/actions/runs/40174615797. All six application jobs passed on Ubuntu, Windows, and macOS with Python 3.11/3.12. Each passed syntax compilation, web UI presence, unit tests, tracked-file secret scan, and clean-install HTTP smoke. The opt-in live integration job was skipped by its `workflow_dispatch` condition.
+- Final full local suites after FS-003: Python 3.11, 3.12, and 3.14 unittest discovery each ran 178 tests with 8 skipped; all passed. Pytest on the same versions reported 170 passed, 8 skipped (178 collected); all passed. The direct ID comparison found 178 tests in each discovery system. The apparent 177 unittest versus 169 pytest difference is presentation: unittest includes the 8 skipped tests in its `Ran 178` total, while pytest separates them into `170 passed` and `8 skipped`; they collect the same tests. Pytest separately reports 62 nested subtests.
+- Pyright (`uvx --from pyright pyright --pythonversion 3.11 app.py backend tests`): 0 errors, warnings, or informations; this is Pyright, not Pylance.
+- `python -m compileall -q app.py backend tests scripts` on Python 3.14 and equivalent Python 3.11/3.12 commands passed. Clean-install HTTP smoke passed locally on all three Python versions.
+- Tracked-file secret scan passed in fresh CI on all six application jobs. Local `git grep` scan found no matches (exit 1 is its expected no-match result). `git diff --check` passed before each commit.
 
 ## Next action
 
-Commit only `scripts/smoke_clean_install.py` and this checkpoint update on `main`; push to `origin/main`, then inspect all six fresh CI job logs. Fix any remaining reproduced failures and update this checkpoint with the final commit SHA and CI result.
+No remaining implementation action. Documented limitation: Windows replacement and deletion remain vulnerable to hostile parent-directory/reparse-point races, as described in `docs/architecture.md`; POSIX race tests passed in Linux/macOS CI but are not runnable on this local Windows host. Live external provider/MCP/OAuth checks were skipped because CI only runs them on manual dispatch with configured secrets.
