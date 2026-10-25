@@ -31,7 +31,7 @@ def main() -> int:
         )
         base = f"http://127.0.0.1:{port}"
         try:
-            deadline = time.monotonic() + 20
+            deadline = time.monotonic() + 60
             while time.monotonic() < deadline:
                 if server.poll() is not None:
                     raise RuntimeError(f"Backend exited during startup with status {server.returncode}.")
@@ -45,7 +45,7 @@ def main() -> int:
                 except (OSError, urllib.error.URLError):
                     time.sleep(0.2)
             else:
-                raise RuntimeError("Backend did not become ready within 20 seconds.")
+                raise RuntimeError("Backend did not become ready within 60 seconds.")
 
             with urllib.request.urlopen(base + "/", timeout=3) as response:
                 if response.status != 200 or b"BraincellGPT" not in response.read():

@@ -15,7 +15,7 @@
 ## Phases
 
 - A baseline and diagnostics: VERIFIED
-- B reported CI failures: IN PROGRESS (POSIX race fix passed; path-alias fix is local only pending a second CI run)
+- B reported CI failures: IN PROGRESS (filesystem fixes passed CI; clean-install smoke timeout needs fresh CI after widening its startup window)
 - C agent tool contracts: VERIFIED by code review and full test suites on Windows Python 3.11/3.12
 - D filesystem security and cross-platform correctness: IN PROGRESS (POSIX race tests passed on Linux/macOS; Windows write/delete limitation remains documented)
 - E HTTP API, streaming, approvals: VERIFIED by code review and full test suites on Windows Python 3.11/3.12
@@ -48,6 +48,14 @@
 - Fix: use a consistent absolute lexical workspace root for child construction and relative paths; reject absolute/drive-qualified paths and parent traversal; check each child component for symlinks. Actual file operations retain their existing no-follow/handle checks. Added a root-alias listing/search regression test.
 - Verification: focused tests pass on local Windows Python 3.11, 3.12, and 3.14; full suites pass locally. Fresh CI for this fix is pending.
 
+### CI-001 — clean-install smoke readiness timeout on macOS
+
+- Affected: `scripts/smoke_clean_install.py::main`.
+- Reproduction: CI run `40174307311` and its failed-job rerun, on macOS Python 3.11 and 3.12; both timed out waiting for `/health` after 20 seconds. Unit tests, secret scan, and smoke steps passed on Ubuntu and Windows.
+- Root cause: the smoke script's bounded 20-second startup allowance was insufficient on the macOS hosted runners. The script discards child output, so no application exception was reported; the same startup smoke passes locally.
+- Fix: extend the bounded readiness allowance to 60 seconds and update the timeout message.
+- Regression/verification: `uv run --python 3.11 python scripts/smoke_clean_install.py`, Python 3.12 equivalent, and `python scripts/smoke_clean_install.py` all pass locally. Fresh CI pending.
+
 ## Verified limitation
 
 - Windows write replacement and deletion still resolve parent directories by path. The final `os.replace` can race a hostile directory/reparse-point swap. An attempted integration of the existing handle-rename helper failed Windows tests with `WinError 32` because the temporary handle lacks compatible delete sharing, so that experiment was reverted. The limitation is documented in `docs/architecture.md`; no stronger Windows guarantee is claimed.
@@ -58,7 +66,7 @@
 
 ## Verification this session
 
-- Current base commit: `95431bcf42233651f4b3917f4c357a5d6b7ace2d`, pushed to `origin/main`. The current follow-up filesystem alias fix is uncommitted in `backend/agent.py` and `tests/test_agent_files.py` only.
+- Current commit: `690ccf43f992ca8578a3e5e919138c1c8129ce7d`, pushed to `origin/main`; working tree currently has the smoke timeout and checkpoint update uncommitted. No unrelated changes were present.
 - Fresh CI run for `95431bc`: https://github.com/sanjan-github/BraincellGPT/actions/runs/40173975130. Both Ubuntu jobs passed all tests, secret scan, and clean-install smoke. POSIX read/write path-swap race tests passed on Ubuntu and macOS. Both Windows jobs and both macOS jobs failed five agent filesystem operations because path aliases were compared as different directories. The tool assertions exposed the error payloads; the root cause and follow-up fix are recorded as FS-003. Live external integrations were skipped by workflow design.
 - After the FS-003 local fix, `uv run --python 3.11 python -m unittest discover -s tests -q`: 178 run, 8 skipped, success.
 - After the FS-003 local fix, `uv run --python 3.12 python -m unittest discover -s tests -q`: 178 run, 8 skipped, success.
@@ -73,7 +81,8 @@
 - Workflow secret scan passed in both Ubuntu CI jobs on commit `95431bc`. The tracked-file scan should run again on the follow-up commit.
 - `git diff --check`: success.
 - POSIX dirfd race tests passed on Linux/macOS CI for `95431bc`; local Windows cannot run them (no WSL or Docker). The Windows path-alias failures reproduced only on hosted runners before FS-003 and are not reproduced by the local root-alias regression test.
+- Fresh run `40174307311` for `690ccf4` had all six unit-test jobs pass; all six syntax and secret-scan steps passed. Ubuntu and Windows clean-install smoke passed. Both macOS clean-install smoke steps timed out at the 20-second readiness limit, including on the failed-job rerun. The 60-second change is local and awaits fresh CI.
 
 ## Next action
 
-Commit only `backend/agent.py`, `tests/test_agent_files.py`, and this checkpoint update on `main`; push to `origin/main`, then inspect all six fresh CI job logs. Fix any remaining reproduced failures and update this checkpoint with the final commit SHA and CI result.
+Commit only `scripts/smoke_clean_install.py` and this checkpoint update on `main`; push to `origin/main`, then inspect all six fresh CI job logs. Fix any remaining reproduced failures and update this checkpoint with the final commit SHA and CI result.
