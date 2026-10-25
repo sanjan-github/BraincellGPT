@@ -328,16 +328,25 @@ button:active {
 
 /* Top Navigation Bar — Clean Borderless Minimalist Header */
 .top-nav {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-4);
   z-index: 20;
-  flex-shrink: 0;
   background: transparent;
   border-bottom: none;
   box-shadow: none;
+  pointer-events: none;
+}
+
+.top-nav button,
+.top-nav .active-provider-pill {
+  pointer-events: auto;
 }
 
 .top-left-actions {
@@ -430,7 +439,7 @@ button:active {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  padding: 24px var(--space-4) 0;
+  padding: 52px var(--space-4) 0;
   scrollbar-width: none;
 }
 
@@ -460,7 +469,7 @@ button:active {
 
 .globe-wrapper {
   position: relative;
-  z-index: 100;
+  z-index: 30;
   width: 220px;
   height: 220px;
   margin-bottom: 8px;
@@ -2579,7 +2588,7 @@ let spaceAngleY = 0;
       const y = cosTheta;
       const z = sinPhi * sinTheta;
       const u = lon / LON_BANDS;
-      const v = 1 - (lat / LAT_BANDS);
+      const v = lat / LAT_BANDS;
 
       normals.push(x, y, z);
       texCoords.push(u, v);
