@@ -131,7 +131,7 @@ class RequestSecurityIntegrationTests(unittest.TestCase):
         conversation_id = self.usage_store.create_conversation()
         for index in range(10):
             self.usage_store.reserve_shared_message(conversation_id, f"{index:032x}")
-        with patch("app.open_provider_request") as provider:
+        with patch.dict("os.environ", {"GROQ_API_KEY": ""}), patch("app.open_provider_request") as provider:
             status, result = self._post_json("/api/chat", {
                 "message": "one more", "provider": "groq", "conversation_id": conversation_id,
                 "request_id": "f" * 32,

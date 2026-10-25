@@ -723,6 +723,8 @@ class Handler(BaseHTTPRequestHandler):
                 if credential_mode == SHARED_GROQ_MODE:
                     if text_field("provider", "groq").strip().lower() != "groq":
                         raise ValueError("BrainCellGPT free access uses Groq. Choose your own provider key to use another provider.")
+                    if usage_store.shared_usage() >= MAX_SHARED_MESSAGES_PER_INSTALLATION:
+                        raise MessageLimitReached
 
                 def reserve_chat_message() -> int:
                     nonlocal reserved_count
