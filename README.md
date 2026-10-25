@@ -1,180 +1,275 @@
-<div align="center">
+# BrainCellGPT
 
-<br>
-
-# 🧠 BraincellGPT
-
-**One Cell. Infinite Confusion.**
-
-A self-hosted AI chatbot with a 3D WebGL globe, 15+ LLM providers, and zero cloud dependencies.  
-Your chats never leave your machine.
-
-<br>
+A self-hosted, local-first conversational AI interface built with zero external Python dependencies.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Build](https://img.shields.io/badge/Build-Passing-brightgreen)
-![Providers](https://img.shields.io/badge/Providers-15%2B-orange)
-![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-success)
-
-</div>
+[![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![CI Status](https://img.shields.io/badge/CI-Passing-brightgreen.svg)](.github/workflows/ci.yml)
+[![Zero External Dependencies](https://img.shields.io/badge/Dependencies-Standard%20Library-brightgreen.svg)](#architecture)
 
 ---
 
-## ✨ Highlights
+## Table of Contents
 
-| | Feature |
-| --- | --- |
-| 🌍 | **3D WebGL Earth** — Interactive globe with parallax starfield on the welcome screen |
-| 🔒 | **Local-first privacy** — Conversations stored in browser IndexedDB, never uploaded |
-| 🤖 | **15+ providers** — Groq, OpenAI, Gemini, Anthropic, DeepSeek, Mistral, xAI, and more |
-| 🏠 | **Self-hosted** — Single Python file, zero pip installs, runs on `localhost` |
-| 🔑 | **Dual access modes** — Shared Groq key (10 free messages) or bring your own API key |
-| 🖥️ | **Local model support** — Connect to Ollama or LM Studio for fully offline inference |
-| 💾 | **Persistent history** — Pick up where you left off across browser restarts |
-| ⚡ | **One-command startup** — `python app.py` and you're chatting |
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Architecture & Privacy](#architecture--privacy)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Supported Providers](#supported-providers)
+- [Configuration Reference](#configuration-reference)
+- [Security Model](#security-model)
+- [Development and Testing](#development-and-testing)
+- [Project Structure](#project-structure)
+- [License](#license)
 
 ---
 
-## 🚀 Quick Start
+## Overview
+
+BrainCellGPT is an open-source, local-first conversational AI interface designed for users who want full control over their interaction data. It pairs a self-hosted Python backend—powered exclusively by Python's standard library—with a responsive frontend featuring an interactive WebGL Earth visualization.
+
+The application allows users to query over 15 hosted and local large language model (LLM) providers while keeping all conversation history stored on the client side in browser-managed IndexedDB.
+
+---
+
+## Key Features
+
+- **Zero-Dependency Backend**: Runs entirely on the Python Standard Library (`http.server`, `urllib.request`, `sqlite3`). No virtual environment or package installations are required for core execution.
+- **Local-First Data Storage**: Complete chat logs and session metadata are stored in the client browser's IndexedDB, rather than in an external database or cloud account.
+- **Multi-Provider Architecture**: Direct support for 15+ hosted API providers (OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, Mistral, xAI, OpenRouter, and others) as well as offline local runtimes (Ollama, LM Studio).
+- **Interactive WebGL Visualization**: Custom 3D Earth globe with texture mapping and an ambient parallax starfield implemented in vanilla WebGL.
+- **Dual Credential Modes**: Use server-configured credentials (including shared Groq access with a 10-attempt local quota) or configure user-supplied API keys directly in the client settings.
+- **Ephemeral In-Memory Secrets**: User-provided API keys are held strictly in server RAM with bounded LRU eviction and time-to-live expiration; they are never persisted to disk or browser local storage.
+
+---
+
+## Architecture & Privacy
+
+BrainCellGPT strictly separates client session data, application configuration, and network traffic:
+
+| Data Type | Storage Location | Persistence & Privacy Details |
+| :--- | :--- | :--- |
+| **Chat Transcripts & History** | Client IndexedDB | Retained exclusively on the local client device. Can be exported or deleted at any time through the UI or browser storage settings. |
+| **UI Preferences & Active Profile** | Client `localStorage` | Stores non-sensitive preferences (selected model ID, temperature, active provider selection). Contains no secrets. |
+| **Runtime API Keys** | Server RAM | Keys submitted via Settings are cached in an in-memory dictionary (max 128 profiles, 24-hour TTL) and cleared immediately upon server shutdown. |
+| **Shared Usage Quota** | Local SQLite Database | Retains anonymized request identifiers and message attempt counters to enforce installation limits. No message bodies or prompt contents are stored. |
+| **Server Credentials** | Host `.env` File | Plaintext configuration for host operators. Must be restricted via filesystem permissions and never checked into source control. |
+
+```
+┌────────────────────────────────────────────────────────┐
+│                      Client Browser                    │
+│  ┌───────────────────────┐   ┌──────────────────────┐  │
+│  │      Vanilla UI       │   │   Browser Storage    │  │
+│  │   (HTML5/CSS3/WebGL)  │   │  - IndexedDB (Chats) │  │
+│  └───────────┬───────────┘   │  - localStorage      │  │
+│              │               └──────────────────────┘  │
+└──────────────┼─────────────────────────────────────────┘
+               │ HTTP API (Port 8000)
+┌──────────────▼─────────────────────────────────────────┐
+│                    Host Machine (app.py)               │
+│  ┌───────────────────────┐   ┌──────────────────────┐  │
+│  │  ThreadingHTTPServer  │   │     Memory Store     │  │
+│  │  (Python Stdlib Only) │   │  (Ephemeral Secrets) │  │
+│  └───────────┬───────────┘   └──────────────────────┘  │
+│              │               ┌──────────────────────┐  │
+│              ├───────────────┤   SQLite (Usage DB)  │  │
+│              │               └──────────────────────┘  │
+└──────────────┼─────────────────────────────────────────┘
+               │ HTTPS (Outbound Provider Calls)
+┌──────────────▼─────────────────────────────────────────┐
+│           Configured LLM Provider Service              │
+│  (Groq, OpenAI, Anthropic, Gemini, Ollama, LM Studio)  │
+└────────────────────────────────────────────────────────┘
+```
+
+> **Note on Network Privacy**: Using hosted providers (e.g., Groq, OpenAI, Anthropic) requires sending prompts and relevant conversation context to the corresponding provider's API. For entirely air-gapped or offline inference, select Ollama or LM Studio.
+
+---
+
+## Prerequisites
+
+- **Python**: Version 3.10 or higher.
+- **Browser**: Modern desktop browser supporting WebGL and IndexedDB (Chrome, Firefox, Safari, Edge).
+- **API Access**: An API key from any supported provider, or an active local instance of Ollama / LM Studio.
+
+---
+
+## Quick Start
+
+### 1. Clone the Repository
 
 ```bash
-# Clone the repository
 git clone https://github.com/sanjan-github/BraincellGPT.git
 cd BraincellGPT
+```
 
-# Create your local configuration
-cp .env.example .env          # macOS / Linux
-# Copy-Item .env.example .env   # Windows PowerShell
+### 2. Configure Environment
 
-# Add your Groq key (or any supported provider)
-# Edit .env → GROQ_API_KEY=your_key_here
+Create a `.env` file from the provided template:
 
-# Launch
+**Unix (macOS / Linux):**
+```bash
+cp .env.example .env
+```
+
+**Windows (PowerShell):**
+```powershell
+Copy-Item .env.example .env
+```
+
+Edit `.env` to include your provider credentials. For standard Groq access:
+
+```dotenv
+GROQ_API_KEY=gsk_your_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+PORT=8000
+```
+
+### 3. Start the Server
+
+```bash
 python app.py
 ```
 
-Open **http://localhost:8000** — that's it. Choose shared Groq access or configure your own provider in **Chat Settings**.
+### 4. Access the Application
 
-> [!NOTE]
-> No `pip install` required. The server uses only Python's standard library.  
-> Opening `web/index.html` directly won't work — the UI communicates through the local HTTP API.
+Navigate to `http://localhost:8000` in your web browser. 
 
----
-
-## 🔌 Supported Providers
-
-| Provider | Environment Variables |
-| --- | --- |
-| **Groq** | `GROQ_API_KEY`, `GROQ_MODEL` |
-| **OpenAI** | `OPENAI_API_KEY`, `OPENAI_MODEL` |
-| **Azure OpenAI** | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT` |
-| **Google Gemini** | `GEMINI_API_KEY`, `GEMINI_MODEL` |
-| **Anthropic** | `ANTHROPIC_API_KEY` |
-| **OpenRouter** | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` |
-| **NVIDIA NIM** | `NVIDIA_NIM_API_KEY`, `NVIDIA_NIM_MODEL` |
-| **DeepSeek** | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` |
-| **Mistral** | `MISTRAL_API_KEY`, `MISTRAL_MODEL` |
-| **xAI (Grok)** | `XAI_API_KEY`, `XAI_MODEL` |
-| **Together AI** | `TOGETHER_API_KEY`, `TOGETHER_MODEL` |
-| **Fireworks** | `FIREWORKS_API_KEY`, `FIREWORKS_MODEL` |
-| **Cerebras** | `CEREBRAS_API_KEY`, `CEREBRAS_MODEL` |
-| **Ollama** | Run locally — no API key needed |
-| **LM Studio** | Run locally — no API key needed |
-| **Custom API** | `CUSTOM_API_BASE_URL`, `CUSTOM_API_KEY`, `CUSTOM_MODEL` |
-
-Configure credentials in `.env` or enter them at runtime through **Chat Settings**. See [`.env.example`](.env.example) for all variable names and default model IDs.
+*Note: The frontend must be served via the Python application; opening `web/index.html` directly via the file protocol (`file:///`) will not function due to cross-origin API requirements.*
 
 ---
 
-## 🔒 Privacy & Data Storage
+## Supported Providers
 
-BraincellGPT is designed for **local-first operation**. Here's exactly where your data lives:
+BrainCellGPT includes predefined configurations for major LLM APIs:
 
-| Data | Storage Location | Details |
-| --- | --- | --- |
-| Conversations & messages | Browser IndexedDB | Device-local; deletable from the app or by clearing site data |
-| Provider profile settings | Browser localStorage | Configuration metadata only — no API keys |
-| Usage tracking | Local SQLite database | Request IDs and counts — no prompts or replies |
-| API keys (runtime) | Server process memory | Never persisted to disk; cleared on server restart |
-| API keys (.env) | Local `.env` file | Never commit this file to version control |
-
-> [!IMPORTANT]
-> When using a hosted provider, your messages are sent to that provider's API for processing. Review the provider's privacy and data retention policies. For fully offline operation, use **Ollama** or **LM Studio**.
-
----
-
-## 🎮 How It Works
-
-1. **Launch** — `python app.py` starts a lightweight HTTP server on `localhost:8000`
-2. **Choose your mode** — Use the shared Groq key (10 messages included) or enter your own API key for any supported provider
-3. **Chat** — Conversations are saved locally in your browser and persist across sessions
-4. **Manage history** — Create, reopen, continue, or delete conversations at any time
-
-### Shared Key Allowance
-
-The built-in Groq access provides **10 message attempts per installation**. An attempt is counted once the provider request begins, regardless of whether it succeeds. With your own API key, this limit does not apply — only your provider's billing and rate limits govern usage.
+| Provider | Authentication Variable | Default / Recommended Model | Local / Cloud |
+| :--- | :--- | :--- | :--- |
+| **Groq** | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | Cloud |
+| **OpenAI** | `OPENAI_API_KEY` | `gpt-4.1-mini` | Cloud |
+| **Anthropic** | `ANTHROPIC_API_KEY` | `claude-3-5-sonnet-latest` | Cloud |
+| **Google Gemini** | `GEMINI_API_KEY` | `gemini-3.8-flash` | Cloud |
+| **DeepSeek** | `DEEPSEEK_API_KEY` | `deepseek-chat` | Cloud |
+| **Mistral AI** | `MISTRAL_API_KEY` | `mistral-small-latest` | Cloud |
+| **xAI** | `XAI_API_KEY` | `grok-3-mini` | Cloud |
+| **OpenRouter** | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` | Cloud |
+| **Together AI** | `TOGETHER_API_KEY` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | Cloud |
+| **Fireworks AI** | `FIREWORKS_API_KEY` | `accounts/fireworks/models/llama-v3p3-70b-instruct` | Cloud |
+| **NVIDIA NIM** | `NVIDIA_NIM_API_KEY` | `meta/llama-3.3-70b-instruct` | Cloud |
+| **Cerebras** | `CEREBRAS_API_KEY` | `llama-3.3-70b` | Cloud |
+| **Azure OpenAI** | `AZURE_OPENAI_API_KEY` | Configured Deployment Name | Cloud |
+| **Ollama** | Not required | Locally installed model tag | Local |
+| **LM Studio** | Not required | Locally loaded model | Local |
+| **Custom OpenAI-Compatible** | `CUSTOM_API_KEY` | Configured Model Name | Either |
 
 ---
 
-## 🔐 Security
+## Configuration Reference
 
-- API keys are held in a bounded in-memory cache (128 profiles max, 24-hour TTL) — never written to browser storage or returned to the client
-- The server binds to `127.0.0.1` by default — not accessible from the network
-- Remote access requires an authentication token and a TLS reverse proxy — see [Security Guidance](docs/security.md)
-- Never commit `.env` or publish real credentials
+The following environment variables can be declared in `.env` or passed via system environment variables:
+
+```dotenv
+# Core Server Settings
+PORT=8000
+
+# Groq
+GROQ_API_KEY=
+GROQ_MODEL=llama-3.3-70b-versatile
+
+# OpenAI
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+
+# Google Gemini
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.8-flash
+
+# Anthropic
+ANTHROPIC_API_KEY=
+
+# OpenRouter
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=openai/gpt-4o-mini
+
+# Azure OpenAI
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_API_KEY=
+AZURE_OPENAI_DEPLOYMENT=
+
+# Custom Compatible Endpoint
+CUSTOM_API_BASE_URL=
+CUSTOM_API_KEY=
+CUSTOM_MODEL=
+```
 
 ---
 
-## 🧪 Development
+## Security Model
 
-### Run Tests
+BrainCellGPT is engineered with baseline defenses against credential compromise, SSRF, and request floods:
+
+1. **Loopback Binding**: By default, the server binds to `127.0.0.1` and does not accept remote network connections.
+2. **Volatile Secret Management**: API keys submitted through client settings are retained in server RAM within an LRU-evicted cache (maximum 128 entries with a 24-hour expiration). Keys are never written to disk or echoed back to the client.
+3. **SSRF Protections**: Outbound requests reject private and loopback address targets unless specifically targeting local developer providers (`localhost` for Ollama on port 11434 or LM Studio on port 1234).
+4. **Rate Limiting & Concurrency Throttling**: A sliding-window rate limiter restricts requests to 20 operations per 60 seconds per client IP, backed by a pool limit of 64 concurrent HTTP handlers.
+5. **No Third-Party Runtime Dependencies**: Reducing runtime dependencies to zero eliminates supply chain vulnerabilities within the Python dependency tree.
+
+Detailed threat modeling and deployment hardening instructions are documented in [docs/security.md](docs/security.md).
+
+---
+
+## Development and Testing
+
+### Executing the Test Suite
+
+The project includes unit and integration tests covering API routing, usage tracking, credential stores, and security constraints:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-### Smoke Check
+### Static Analysis and Smoke Tests
+
+Verify source compilation and perform a clean-install HTTP verification check:
 
 ```bash
-python scripts/smoke_clean_install.py
+# Verify Python syntax across all modules
 python -m compileall -q app.py backend tests scripts
+
+# Run the automated HTTP smoke suite
+python scripts/smoke_clean_install.py
 ```
 
-CI runs on **Windows**, **macOS**, and **Linux** with Python 3.11 and 3.12.
+### Continuous Integration
+
+All commits are validated across Python 3.11 and 3.12 on Linux, macOS, and Windows runners via GitHub Actions. Refer to [.github/workflows/ci.yml](.github/workflows/ci.yml) for pipeline specifications.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
-```
+```text
 BraincellGPT/
-├── app.py                          # HTTP server & chatbot API (single file, stdlib only)
-├── backend/                        # Provider adapters, credentials, and utilities
-│   ├── provider_registry.py        # Provider configuration & capabilities
-│   ├── provider_http.py            # Outbound HTTP to LLM providers
-│   ├── chat_usage.py               # Usage tracking & rate limiting
-│   ├── secure_store.py             # Credential storage support
-│   └── media.py                    # Image/media handling
-├── web/index.html                  # Complete frontend (HTML + CSS + JS, single file)
-├── tests/                          # Unit, integration, and security regression tests
-├── docs/                           # Architecture, security, and project documentation
-├── scripts/                        # CI smoke checks and utilities
-└── .github/workflows/ci.yml        # Cross-platform CI pipeline
+├── app.py                         # HTTP application server and API endpoints
+├── backend/                       # Backend architecture modules
+│   ├── chat_usage.py              # SQLite-based message tracking and quota controls
+│   ├── media.py                   # Multimodal payload processing and normalization
+│   ├── provider_http.py           # Resilient HTTP client and SSRF protection
+│   ├── provider_registry.py       # LLM provider specifications and model mappings
+│   └── secure_store.py            # Local secure credential storage helpers
+├── web/                           # Client interface
+│   └── index.html                 # Single-file WebGL visualizer, UI, and client logic
+├── tests/                         # Test suites for backend, UI, and security regressions
+├── docs/                          # In-depth architectural and security documentation
+├── scripts/                       # Deployment and verification utilities
+├── .env.example                   # Environment configuration template
+├── LICENSE                        # MIT license terms
+└── README.md                      # Project documentation
 ```
 
 ---
 
-## 📄 License
+## License
 
-Released under the [MIT License](LICENSE).
-
----
-
-<div align="center">
-
-**Built for curious minds and questionable conversations.**
-
-*BraincellGPT — because one brain cell is all you need.*
-
-</div>
+This project is licensed under the terms of the [MIT License](LICENSE).
