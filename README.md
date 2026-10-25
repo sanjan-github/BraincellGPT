@@ -4,34 +4,67 @@
 
 ### One cell. Infinite confusion.
 
-An entertaining chatbot for curious questions, strange tangents, and conversations with absolutely no plan.
+A small, funny chatbot for curious questions, strange tangents, and conversations with absolutely no plan.
+
+**Your chats stay on your device. Your conversations are yours to keep—or delete whenever you want.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
 
 </div>
 
-BrainCellGPT is a small Python application with a browser-based chat interface. Choose a hosted model provider, connect a local Ollama or LM Studio server, or configure a compatible custom endpoint. The interface keeps the focus on chatting; it does not provide repository editing or autonomous development tools.
+## Your chats. Your device. Your choice.
 
-The server uses Python's standard library and serves the included web interface directly. No frontend build step or extra database package is required. SQLite stores the selected access mode and shared-key allowance on the app installation; conversation transcripts stay in browser IndexedDB.
+BrainCellGPT is a **local-first chatbot**. It runs on your computer, and your conversation history is saved in your browser's local IndexedDB storage—not in a BrainCellGPT cloud account.
 
-## Features
+- **Your conversations stay local.** Chat history is saved in the browser on your device and is not uploaded as a conversation database.
+- **Pick up where you left off.** Reopen saved chats, continue a conversation later, and keep your history across browser restarts.
+- **Delete chats whenever you want.** You control your conversation history and can delete individual conversations from the app. Clearing the browser's site data can also remove locally saved chats.
+- **No BrainCellGPT account required.** Your conversations are stored locally, not synced to a BrainCellGPT account or across devices.
+- **Choose how to power your chats.** Use BrainCellGPT's shared Groq access or configure your own supported provider key.
+- **Your API key stays out of browser storage.** Keys entered in Settings are sent to the local server and held in server memory; the shared Groq key stays on the server.
 
-- Chat with hosted or local language models.
-- Save provider profiles and model settings in this browser for return visits.
-- Choose BraincellGPT's shared Groq access (10 provider attempts per local installation) or use your own provider key. The shared key remains on the server.
-- Check provider connectivity from the app.
-- Start a new conversation and copy assistant replies.
-- Keep chat history on this device, reopen previous conversations, continue them, and delete them.
-- Use your own saved key without BraincellGPT's shared-key allowance. Provider billing, quotas, and rate limits still apply.
-- Use a responsive, single-page interface with a playful space theme.
+**A privacy note:** local storage does not mean every message is processed locally. If you choose a hosted provider, the message and relevant conversation history are sent to that provider to generate a reply and are subject to its data-handling policies. For processing through a local model, configure a local Ollama or LM Studio server.
 
-Provider features and model availability vary. Chat replies currently return as complete responses; the chatbot interface does not stream tokens. A shared-key attempt counts when its provider request begins, including a request that later fails or times out. Requests rejected before that point do not count. The app does not automatically retry provider requests; submitting again starts a new attempt and may use another message.
+## What it does
+
+- Chats with hosted LLM providers or locally running Ollama and LM Studio models.
+- Saves conversations in this browser so you can reopen, continue, or delete them.
+- Stores non-secret provider profile settings in browser storage.
+- Offers shared Groq access with a limit of 10 provider attempts per local app installation.
+- Lets you use your own provider key without BrainCellGPT's shared-key allowance.
+- Checks provider connectivity from the app.
+- Keeps the focus on chatting—not repository editing or autonomous coding tools.
+- Serves a lightweight web interface from Python, with no frontend build step.
+
+Provider capabilities and model availability vary. Replies currently arrive as complete responses; the chat interface does not stream tokens.
+
+### About the shared-key allowance
+
+Shared Groq access allows **10 started provider attempts across conversations for a local app installation**. An attempt counts once the provider request begins, even if the request later fails or times out. Requests rejected before the provider call starts do not count. The app does not automatically retry provider requests; manually submitting again starts another attempt.
+
+This is an installation-level allowance, not an authenticated per-person quota or a guarantee against API spending. It can be bypassed by creating another installation or changing local state. Do not treat it as sufficient abuse protection for a public anonymous service. With your own key, BrainCellGPT's shared allowance does not apply, but your provider's billing, quotas, and rate limits still do.
+
+## Privacy and data storage
+
+BrainCellGPT is designed for local use. Here is what is stored and where:
+
+| Data | Where it is stored | What to know |
+| --- | --- | --- |
+| Conversation titles, messages, and timestamps | This browser's IndexedDB | Stays on this browser/device; can be deleted from the app or by clearing site data. |
+| Non-secret provider profile settings | This browser's local storage | Contains configuration metadata, not API key values. |
+| Access mode and shared-key usage | Local SQLite database used by the app | Stores random request/conversation IDs and usage information, not prompts or replies. |
+| API keys entered in Settings | Local server process memory | Not stored in browser storage; cleared when the server stops and must be entered again. |
+| Keys configured through `.env` | The machine running the server | Protect the file and never commit real credentials. |
+
+When you use a hosted provider, your prompts and the conversation context sent with them leave your device and are processed by that provider. Review its privacy, retention, and training policies. If you use Ollama or LM Studio, requests go to the local service you configured.
+
+Local conversation history is browser-specific and does not automatically sync between devices. If you clear the browser's site data, your saved conversations may be deleted. **You remain in control of the history stored by BrainCellGPT.**
 
 ## Requirements
 
-- Python 3.10 or later
-- A supported provider API key, or a locally running Ollama or LM Studio server with a model installed
+- Python 3.10 or later.
+- A supported provider API key, or a local Ollama/LM Studio server with a model installed.
 
 No package installation is required for the core app. The optional `keyring` package is used by backend credential-storage support; it is not required for ordinary chat.
 
@@ -44,7 +77,7 @@ git clone https://github.com/sanjan-github/BraincellGPT.git
 cd BraincellGPT
 ```
 
-Create a local configuration file:
+Create a local configuration file.
 
 **Windows PowerShell**
 
@@ -58,7 +91,7 @@ Copy-Item .env.example .env
 cp .env.example .env
 ```
 
-Add the API key and model for the provider you want to use. For example:
+To enable shared Groq access, add your server-side Groq credentials to `.env`, for example:
 
 ```dotenv
 GROQ_API_KEY=your_api_key
@@ -66,19 +99,19 @@ GROQ_MODEL=llama-3.3-70b-versatile
 PORT=8000
 ```
 
-Start the app:
+Start BrainCellGPT:
 
 ```bash
 python app.py
 ```
 
-Open [http://localhost:8000](http://localhost:8000) and choose shared free access or your own provider key. To use shared access, configure `GROQ_API_KEY` in the server's `.env` file. For your own key, open **Chat settings**, select a supported provider, save the key, and use **Verify**. Keep the server running while you chat; press `Ctrl+C` in the terminal to stop it.
+Open http://localhost:8000 and follow the setup choices. You can use the configured shared Groq access or configure your own provider in **Chat settings**. Keep the server running while you chat; press `Ctrl+C` in the terminal to stop it.
 
-Opening `web/index.html` directly will not work because the interface needs the local HTTP API.
+Opening `web/index.html` directly will not work because the interface communicates with the local HTTP API.
 
 ## Supported providers
 
-Set provider credentials in `.env`, or enter a key in **Chat settings**. Environment variable names and default model IDs are listed in [`.env.example`](.env.example).
+Configure server-side credentials in `.env` or enter a key through **Chat settings**. Environment variable names and default model IDs are listed in [`.env.example`](.env.example).
 
 | Provider | Configuration |
 | --- | --- |
@@ -99,23 +132,20 @@ Set provider credentials in `.env`, or enter a key in **Chat settings**. Environ
 | LM Studio | Start its local server and load a model |
 | Custom compatible API | `CUSTOM_API_BASE_URL`, `CUSTOM_API_KEY`, `CUSTOM_MODEL` |
 
-Model IDs, capabilities, pricing, and service availability are controlled by each provider and may change. BrainCellGPT's provider and endpoint checks do not verify every model's live availability.
+Model IDs, capabilities, prices, and availability are controlled by each provider and can change. Provider and endpoint checks do not guarantee that every model is currently available.
 
-## API keys and privacy
+## Security notes
 
-- A key entered in the app is sent to the local BrainCellGPT server and kept in process memory. The cache is capped at 128 profiles and keys expire after 24 hours; stopping the app clears it.
-- `.env` keys remain on the machine running the server. Do not commit `.env` or share real credentials.
-- Provider profiles contain nonsecret settings and are stored in browser `localStorage`. API key values are not stored in browser storage; keys entered in Settings are held only in server memory and must be entered again after the app stops.
-- The local SQLite file `chat-usage.sqlite3` stores random conversation/request IDs, the selected access mode, and shared-key usage; it does not store prompts, replies, or API keys. Conversation transcripts stay in this browser's IndexedDB and are not uploaded as a database. Clearing browser storage may delete them, and they do not sync to other devices. Its location follows `BRAINCELLGPT_DATA_DIR`, or the platform's local BrainCellGPT application-data directory.
-- The shared Groq allowance is 10 provider attempts per local app installation, across chats. Requests count when the provider call begins, including failed or timed-out attempts; retries are explicit and count as new attempts. This anonymous installation-level limit is not account-based and can be bypassed by someone who creates another installation or changes the local data. It does not cap provider spending. Own-key mode bypasses this BraincellGPT allowance, while provider billing, quotas, and rate limits still apply.
-- Prompts and conversation history sent to a hosted provider are subject to that provider's data handling and retention terms. Local models send requests to the configured local service.
-- The server binds to loopback by default. Do not expose it directly to an untrusted network. Remote access is an explicit advanced configuration requiring an authentication token and a trusted TLS reverse proxy; see [Security](docs/security.md).
-
-See [Architecture](docs/architecture.md) for the chat request flow and [Security](docs/security.md) for deployment guidance.
+- Never commit `.env` or publish real credentials.
+- API keys entered in Settings are sent to the local server and held in a bounded in-memory cache. The cache supports up to 128 profiles, expires keys after 24 hours, and is cleared when the server stops.
+- BrainCellGPT does not return saved API keys to the browser and does not store entered key values in browser storage.
+- The server binds to loopback by default. Do not expose it directly to an untrusted network.
+- Remote access is an advanced opt-in that requires an authentication token and a trusted TLS reverse proxy. Read [Security guidance](docs/security.md) before enabling it.
+- The local app's protections do not replace a deployment security review.
 
 ## Development and verification
 
-Run the test suite:
+Run the unit tests:
 
 ```bash
 python -m unittest discover -s tests -v
@@ -128,7 +158,7 @@ python scripts/smoke_clean_install.py
 python -m compileall -q app.py backend tests scripts
 ```
 
-The CI workflow runs the application checks on Windows, macOS, and Linux with Python 3.11 and 3.12. Provider tests use mock responses; one live Groq chat request was also verified during 1.0 preparation. This does not establish live availability for every provider or model.
+The CI workflow runs application checks on Windows, macOS, and Linux with Python 3.11 and 3.12. Mocked provider tests do not establish live availability for every provider, model, account, or region.
 
 ## Project layout
 
