@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import tempfile
 import time
 import uuid
 from contextlib import contextmanager
@@ -34,6 +35,10 @@ def default_database_path() -> Path:
     configured = os.environ.get("BRAINCELLGPT_DATA_DIR", "").strip()
     if configured:
         data_dir = Path(configured).expanduser()
+    elif os.environ.get("VERCEL") == "1":
+        # Vercel functions have a read-only home directory. /tmp is writable,
+        # though instance-local and therefore intentionally not durable.
+        data_dir = Path(tempfile.gettempdir()) / "BrainCellGPT"
     elif os.name == "nt":
         data_dir = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "BrainCellGPT"
     else:
