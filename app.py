@@ -193,6 +193,31 @@ PUBLIC_ORIGIN = os.environ.get("BRAINCELLGPT_PUBLIC_ORIGIN", "").rstrip("/")
 PUBLIC_ORIGIN_PORT = None
 
 
+def _vercel_hostname(value: str) -> str | None:
+    """Return a hostname from a platform-provided Vercel URL, if well formed."""
+    value = value.strip().lower()
+    if not value or any(character in value for character in " /\\?#@"):
+        return None
+    try:
+        parsed = urlsplit("//" + value)
+        if (not parsed.hostname or parsed.username or parsed.password or parsed.port
+                or parsed.path or parsed.query or parsed.fragment):
+            return None
+    except ValueError:
+        return None
+    return parsed.hostname
+
+
+VERCEL_TRUSTED_HOSTS: set[str] = set()
+if os.environ.get("VERCEL") == "1":
+    deployment_host = _vercel_hostname(os.environ.get("VERCEL_URL", ""))
+    production_host = _vercel_hostname(os.environ.get("VERCEL_PROJECT_PRODUCTION_URL", ""))
+    if deployment_host:
+        VERCEL_TRUSTED_HOSTS.add(deployment_host)
+    if os.environ.get("VERCEL_ENV") == "production" and production_host:
+        VERCEL_TRUSTED_HOSTS.add(production_host)
+
+
 def _is_loopback_host(host: str) -> bool:
     if host.lower() == "localhost":
         return True
@@ -452,11 +477,18 @@ class Handler(BaseHTTPRequestHandler):
         try:
             parsed_host = urlsplit("http://" + host)
             hostname = (parsed_host.hostname or "").lower()
+            if (parsed_host.username or parsed_host.password or parsed_host.path
+                    or parsed_host.query or parsed_host.fragment):
+                return False
             local_host = _is_loopback_host(hostname)
             if local_host:
                 valid_host = parsed_host.port == PORT
             else:
-                valid_host = REMOTE_ACCESS_ENABLED and hostname in ALLOWED_HOSTS and (parsed_host.port or 443) == PUBLIC_ORIGIN_PORT
+                valid_host = (
+                    (REMOTE_ACCESS_ENABLED and hostname in ALLOWED_HOSTS
+                     and (parsed_host.port or 443) == PUBLIC_ORIGIN_PORT)
+                    or (hostname in VERCEL_TRUSTED_HOSTS and parsed_host.port in (None, 443))
+                )
             if not valid_host:
                 return False
         except ValueError:
@@ -467,13 +499,25 @@ class Handler(BaseHTTPRequestHandler):
                 parsed_origin = urlsplit(origin)
                 origin_host = (parsed_origin.hostname or "").lower()
                 if _is_loopback_host(origin_host):
-                    valid_origin = parsed_origin.scheme == "http" and parsed_origin.port == PORT
-                else:
                     valid_origin = (
+                        local_host and parsed_origin.scheme == "http"
+                        and parsed_origin.port == PORT
+                    )
+                else:
+                    valid_configured_origin = (
                         REMOTE_ACCESS_ENABLED and origin.rstrip("/") == PUBLIC_ORIGIN
                         and parsed_origin.scheme == "https" and origin_host in ALLOWED_HOSTS
                         and (parsed_origin.port or 443) == PUBLIC_ORIGIN_PORT
                     )
+                    valid_vercel_origin = (
+                        parsed_origin.scheme == "https" and origin_host == hostname
+                        and origin_host in VERCEL_TRUSTED_HOSTS
+                        and parsed_origin.port in (None, 443)
+                        and parsed_origin.path in ("", "/")
+                        and not parsed_origin.username and not parsed_origin.password
+                        and not parsed_origin.query and not parsed_origin.fragment
+                    )
+                    valid_origin = valid_configured_origin or valid_vercel_origin
                 if not valid_origin:
                     return False
             except ValueError:

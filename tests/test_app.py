@@ -455,6 +455,51 @@ class LocalRequestBoundaryTests(unittest.TestCase):
             untrusted = self.make_handler(host="chat.example", origin="https://other.example")
             self.assertFalse(untrusted.is_trusted_local_request())
 
+    def test_vercel_production_and_deployment_hosts_require_matching_https_origin(self):
+        trusted_hosts = {
+            "braincellgpt.vercel.app",
+            "braincellgpt-preview-123.vercel.app",
+        }
+        with patch("app.REMOTE_ACCESS_ENABLED", False), patch("app.VERCEL_TRUSTED_HOSTS", trusted_hosts):
+            production = self.make_handler(
+                host="braincellgpt.vercel.app",
+                origin="https://braincellgpt.vercel.app",
+                fetch_site="same-origin",
+            )
+            preview = self.make_handler(
+                host="braincellgpt-preview-123.vercel.app",
+                origin="https://braincellgpt-preview-123.vercel.app",
+                fetch_site="same-origin",
+            )
+            self.assertTrue(production.is_trusted_local_request())
+            self.assertTrue(preview.is_trusted_local_request())
+
+            untrusted_host = self.make_handler(host="attacker.vercel.app")
+            cross_origin = self.make_handler(
+                host="braincellgpt.vercel.app",
+                origin="https://attacker.vercel.app",
+            )
+            cross_deployment = self.make_handler(
+                host="braincellgpt-preview-123.vercel.app",
+                origin="https://braincellgpt.vercel.app",
+            )
+            loopback_origin = self.make_handler(
+                host="braincellgpt.vercel.app",
+                origin="http://localhost:8000",
+            )
+            non_https = self.make_handler(
+                host="braincellgpt.vercel.app",
+                origin="http://braincellgpt.vercel.app",
+            )
+            for handler in (untrusted_host, cross_origin, cross_deployment, loopback_origin, non_https):
+                with self.subTest(headers=dict(handler.headers)):
+                    self.assertFalse(handler.is_trusted_local_request())
+
+    def test_vercel_trusted_hosts_reject_nonstandard_ports_and_host_injection(self):
+        with patch("app.VERCEL_TRUSTED_HOSTS", {"braincellgpt.vercel.app"}):
+            self.assertFalse(self.make_handler(host="braincellgpt.vercel.app:444").is_trusted_local_request())
+            self.assertFalse(self.make_handler(host="attacker@braincellgpt.vercel.app").is_trusted_local_request())
+
     def test_chat_and_agent_share_one_provider_concurrency_limiter(self):
         from backend import agent, provider_http
 
