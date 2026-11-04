@@ -704,6 +704,30 @@ class Handler(BaseHTTPRequestHandler):
                 "shared_message_limit": MAX_ANONYMOUS_DAILY_MESSAGES if is_supabase else MAX_SHARED_MESSAGES_PER_INSTALLATION,
             }, cookie_header=cookie_header)
             return
+        elif path == "/api/chat/quota":
+            if not self.is_trusted_local_request() or self.client_address[0] not in ("127.0.0.1", "::1"):
+                self.send_json(403, {"error": "This local app only accepts requests from this computer."})
+                return
+            if rate_limited(self.client_address[0] + ":chat-quota"):
+                self.send_json(429, {"error": "Too many requests. Wait a minute and try again."})
+                return
+            if not is_supabase_quota_configured():
+                used = _chat_usage_store().shared_usage()
+                self.send_json(200, {"messages_used": used, "message_limit": MAX_SHARED_MESSAGES_PER_INSTALLATION})
+                return
+            cookie_header = None
+            try:
+                client_id, cookie_header = self._get_anonymous_identity()
+                status = get_supabase_quota_client().get_anonymous_quota_status(client_id)
+                self.send_json(200, {
+                    "messages_used": status.get("messages_used", 0),
+                    "reserved_messages": status.get("reserved_messages", 0),
+                    "remaining_messages": status.get("remaining_messages", MAX_ANONYMOUS_DAILY_MESSAGES),
+                    "message_limit": MAX_ANONYMOUS_DAILY_MESSAGES,
+                }, cookie_header=cookie_header)
+            except (MissingConfigurationError, SupabaseQuotaError):
+                self.send_json(503, {"error": "Daily usage is temporarily unavailable."}, cookie_header=cookie_header)
+            return
         elif path == "/api/conversations/usage":
             if not self.is_trusted_local_request() or self.client_address[0] not in ("127.0.0.1", "::1"):
                 self.send_json(403, {"error": "This local app only accepts requests from this computer."})
@@ -943,13 +967,13 @@ class Handler(BaseHTTPRequestHandler):
                 "messages_used": MAX_ANONYMOUS_DAILY_MESSAGES,
                 "message_limit": MAX_ANONYMOUS_DAILY_MESSAGES,
                 "credential_mode": SHARED_GROQ_MODE,
-            })
+            }, cookie_header=cookie_to_set)
         except DuplicateAnonymousRequestError:
-            self.send_json(409, {"error": "This message was already submitted. Check the conversation before trying again."})
+            self.send_json(409, {"error": "This message was already submitted. Check the conversation before trying again."}, cookie_header=cookie_to_set)
         except SupabaseUnavailableError:
-            self.send_json(503, {"error": "Quota service is temporarily unavailable. Please try again later."})
+            self.send_json(503, {"error": "Quota service is temporarily unavailable. Please try again later."}, cookie_header=cookie_to_set)
         except SupabaseQuotaError as exc:
-            self.send_json(502, {"error": str(exc)})
+            self.send_json(502, {"error": str(exc)}, cookie_header=cookie_to_set)
         except ConversationNotFound:
             self.send_json(404, {"error": "Conversation not found. Start a new conversation."})
         except DuplicateChatRequest:
@@ -971,7 +995,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             # Log the exception type for diagnosis without returning internals to clients.
             print(f"[BrainCellGPT] request failed: {type(exc).__name__}")
-            self.send_json(500, {"error": "Unexpected server error. Check the terminal for details."})
+            self.send_json(500, {"error": "Unexpected server error. Check the terminal for details."}, cookie_header=cookie_to_set)
 
     def do_DELETE(self) -> None:
         if not self.require_authorization():

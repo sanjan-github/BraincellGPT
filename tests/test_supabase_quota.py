@@ -145,18 +145,23 @@ class SupabaseQuotaRpcClientTests(unittest.TestCase):
     @patch("urllib.request.urlopen")
     def test_reserve_anonymous_message_successful(self, mock_urlopen):
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "allowed": True,
-            "messages_used": 1,
-            "message_limit": 10,
-            "status": "reserved",
-        }).encode("utf-8")
+        mock_response.read.return_value = json.dumps([{
+            "accepted": True,
+            "reservation_state": "reserved",
+            "usage_date": "2026-11-04",
+            "successful_messages": 0,
+            "reserved_messages": 1,
+            "remaining_messages": 9,
+        }]).encode("utf-8")
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         result = self.client.reserve_anonymous_message(self.client_id, self.request_id)
 
         self.assertTrue(result["allowed"])
-        self.assertEqual(result["messages_used"], 1)
+        self.assertEqual(result["messages_used"], 0)
+        self.assertEqual(result["reserved_messages"], 1)
+        self.assertEqual(result["remaining_messages"], 9)
+        self.assertEqual(result["status"], "reserved")
 
         # Verify request details
         req = mock_urlopen.call_args[0][0]
@@ -171,17 +176,37 @@ class SupabaseQuotaRpcClientTests(unittest.TestCase):
     @patch("urllib.request.urlopen")
     def test_reserve_anonymous_message_quota_exceeded(self, mock_urlopen):
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "allowed": False,
-            "messages_used": 10,
-            "message_limit": 10,
-            "error": "Daily quota reached",
-        }).encode("utf-8")
+        mock_response.read.return_value = json.dumps([{
+            "accepted": False,
+            "reservation_state": "limit_reached",
+            "usage_date": "2026-11-04",
+            "successful_messages": 10,
+            "reserved_messages": 0,
+            "remaining_messages": 0,
+        }]).encode("utf-8")
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         with self.assertRaises(QuotaExceededError) as ctx:
             self.client.reserve_anonymous_message(self.client_id, self.request_id)
         self.assertIn("10 messages per UTC day", str(ctx.exception))
+
+    @patch("urllib.request.urlopen")
+    def test_finalize_normalizes_live_postgrest_table_response(self, mock_urlopen):
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps([{
+            "reservation_state": "succeeded",
+            "usage_date": "2026-11-04",
+            "successful_messages": 3,
+            "reserved_messages": 0,
+            "remaining_messages": 7,
+        }]).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        result = self.client.finalize_anonymous_message(self.request_id, success=True)
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(result["messages_used"], 3)
+        self.assertEqual(result["remaining_messages"], 7)
 
     @patch("urllib.request.urlopen")
     def test_reserve_anonymous_message_conflict_duplicate(self, mock_urlopen):
