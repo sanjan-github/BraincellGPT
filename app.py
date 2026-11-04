@@ -24,6 +24,12 @@ from typing import Any, Callable
 from backend.provider_http import MAX_CONCURRENT_PROVIDER_REQUESTS, MAX_PROVIDER_RESPONSE_BYTES as SHARED_MAX_PROVIDER_RESPONSE_BYTES, PROVIDER_SLOTS, ProviderInvalidJSON, ProviderResponseTooLarge, open_provider_request, read_provider_json, resolve_public_addresses
 from backend.media import anthropic_content, normalize_images, openai_content
 from backend.provider_registry import AZURE_OPENAI_PROVIDER, OPENAI_COMPATIBLE_PROVIDERS, provider_capabilities
+from backend.supabase_quota import (
+    ANON_COOKIE_MAX_AGE, ANON_COOKIE_NAME, MAX_ANONYMOUS_DAILY_MESSAGES,
+    DuplicateAnonymousRequestError, InvalidAnonymousIdentityError, MissingConfigurationError,
+    QuotaExceededError, SupabaseQuotaClient, SupabaseQuotaError, SupabaseUnavailableError,
+    generate_anonymous_identity, normalize_uuid, verify_client_id,
+)
 from backend.chat_usage import (
     ChatUsageStore, ConversationNotFound, DuplicateChatRequest, MAX_MESSAGES_PER_CONVERSATION,
     MAX_SHARED_MESSAGES_PER_INSTALLATION, MessageLimitReached, OWN_KEY_MODE, SHARED_GROQ_MODE,
@@ -61,6 +67,36 @@ def _chat_usage_store() -> ChatUsageStore:
             if _chat_usage_store_instance is None:
                 _chat_usage_store_instance = ChatUsageStore()
     return _chat_usage_store_instance
+
+
+_supabase_quota_client_instance: SupabaseQuotaClient | None = None
+_supabase_quota_client_lock = Lock()
+
+
+def get_supabase_quota_client() -> SupabaseQuotaClient:
+    global _supabase_quota_client_instance
+    if _supabase_quota_client_instance is None:
+        with _supabase_quota_client_lock:
+            if _supabase_quota_client_instance is None:
+                _supabase_quota_client_instance = SupabaseQuotaClient()
+    return _supabase_quota_client_instance
+
+
+def set_supabase_quota_client(client: SupabaseQuotaClient | None) -> None:
+    global _supabase_quota_client_instance
+    with _supabase_quota_client_lock:
+        _supabase_quota_client_instance = client
+
+
+def is_supabase_quota_configured() -> bool:
+    """Return True if Supabase quota integration is active or expected in this environment."""
+    return bool(
+        os.environ.get("SUPABASE_URL", "").strip()
+        or os.environ.get("SUPABASE_SECRET_KEY", "").strip()
+        or os.environ.get("ANON_CLIENT_SIGNING_SECRET", "").strip()
+        or os.environ.get("VERCEL") == "1"
+        or _supabase_quota_client_instance is not None
+    )
 
 
 def rate_limited(client_ip: str) -> bool:
@@ -467,6 +503,7 @@ def generate_reply(message: str, history: list[dict], personality: str, provider
         raise RuntimeError("Could not reach " + label + ". Check your connection and endpoint URL.") from exc
     return extract_provider_reply(data, protocol, label)
 
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "BrainCellGPT/1.1.0"
 
@@ -571,14 +608,45 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
         super().end_headers()
 
-    def send_json(self, status: int, data: dict) -> None:
+    def send_json(self, status: int, data: dict, cookie_header: str | None = None) -> None:
         body = json.dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if cookie_header:
+            self.send_header("Set-Cookie", cookie_header)
         self.end_headers()
         self.wfile.write(body)
+
+    def _build_cookie_header(self, token: str) -> str:
+        is_secure = (
+            os.environ.get("VERCEL_ENV") == "production"
+            or os.environ.get("VERCEL") == "1"
+            or self.headers.get("X-Forwarded-Proto", "").lower() == "https"
+            or PUBLIC_ORIGIN.startswith("https://")
+        )
+        cookie = f"{ANON_COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={ANON_COOKIE_MAX_AGE}"
+        if is_secure:
+            cookie += "; Secure"
+        return cookie
+
+    def _get_anonymous_identity(self) -> tuple[str, str | None]:
+        cookie_header = self.headers.get("Cookie", "")
+        token = None
+        if cookie_header:
+            from http.cookies import SimpleCookie
+            try:
+                cookie = SimpleCookie(cookie_header)
+                if ANON_COOKIE_NAME in cookie:
+                    token = cookie[ANON_COOKIE_NAME].value
+            except Exception:
+                pass
+        if token:
+            client_id = verify_client_id(token)
+            return client_id, None
+        client_id, new_token = generate_anonymous_identity()
+        return client_id, self._build_cookie_header(new_token)
 
     def do_GET(self) -> None:
         if not self.require_authorization():
@@ -622,12 +690,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             usage_store = _chat_usage_store()
             mode = usage_store.credential_mode()
+            is_supabase = is_supabase_quota_configured()
+            cookie_header = None
+            if mode == SHARED_GROQ_MODE and is_supabase:
+                try:
+                    _, cookie_header = self._get_anonymous_identity()
+                except Exception:
+                    pass
             self.send_json(200, {
                 "credential_mode": mode,
                 "shared_groq_available": bool(os.environ.get("GROQ_API_KEY", "").strip()),
-                "shared_messages_used": usage_store.shared_usage() if mode == SHARED_GROQ_MODE else None,
-                "shared_message_limit": MAX_SHARED_MESSAGES_PER_INSTALLATION,
-            })
+                "shared_messages_used": (None if is_supabase else usage_store.shared_usage()) if mode == SHARED_GROQ_MODE else None,
+                "shared_message_limit": MAX_ANONYMOUS_DAILY_MESSAGES if is_supabase else MAX_SHARED_MESSAGES_PER_INSTALLATION,
+            }, cookie_header=cookie_header)
             return
         elif path == "/api/conversations/usage":
             if not self.is_trusted_local_request() or self.client_address[0] not in ("127.0.0.1", "::1"):
@@ -655,10 +730,18 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             self.send_json(500, {"error": "Could not load the requested web asset."})
             return
+        cookie_header = None
+        if path in ("/", "/index.html") and is_supabase_quota_configured():
+            try:
+                _, cookie_header = self._get_anonymous_identity()
+            except Exception:
+                pass
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if cookie_header:
+            self.send_header("Set-Cookie", cookie_header)
         self.end_headers()
         self.wfile.write(body)
 
@@ -716,6 +799,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(415, {"error": "Content-Type must be application/json."})
             return
         reserved_count: int | None = None
+        cookie_to_set: str | None = None
+        supabase_reserved = False
+        normalized_req_id = ""
+        quota_client: SupabaseQuotaClient | None = None
         try:
             length = int(self.headers.get("Content-Length", "0"))
             max_body_bytes = 12_000_000 if route == "/api/chat" else 200_000
@@ -770,44 +857,99 @@ class Handler(BaseHTTPRequestHandler):
                 if credential_mode == SHARED_GROQ_MODE:
                     if text_field("provider", "groq").strip().lower() != "groq":
                         raise ValueError("BrainCellGPT free access uses Groq. Choose your own provider key to use another provider.")
-                    if usage_store.shared_usage() >= MAX_SHARED_MESSAGES_PER_INSTALLATION:
-                        raise MessageLimitReached
+                    if is_supabase_quota_configured():
+                        normalized_req_id = normalize_uuid(request_id, "request ID")
+                        client_id, cookie_to_set = self._get_anonymous_identity()
+                        quota_client = get_supabase_quota_client()
+                        reserve_result = quota_client.reserve_anonymous_message(client_id, normalized_req_id)
+                        supabase_reserved = True
+                        reserved_count = reserve_result.get("messages_used", 1)
+                    else:
+                        if usage_store.shared_usage() >= MAX_SHARED_MESSAGES_PER_INSTALLATION:
+                            raise MessageLimitReached
 
-                def reserve_chat_message() -> int:
-                    nonlocal reserved_count
-                    if credential_mode == SHARED_GROQ_MODE:
-                        reserved_count = usage_store.reserve_shared_message(conversation_id, request_id)
-                        return reserved_count
-                    usage_store.reserve_own_request(conversation_id, request_id)
-                    return 0
+                        def reserve_chat_message() -> int:
+                            nonlocal reserved_count
+                            reserved_count = usage_store.reserve_shared_message(conversation_id, request_id)
+                            return reserved_count
 
-                request_start = reserve_chat_message
+                        request_start = reserve_chat_message
+                else:
+                    def reserve_chat_message() -> int:
+                        usage_store.reserve_own_request(conversation_id, request_id)
+                        return 0
+
+                    request_start = reserve_chat_message
             if route == "/api/test-connection" and credential_mode == SHARED_GROQ_MODE and text_field("provider", "groq").strip().lower() != "groq":
                 raise ValueError("BrainCellGPT free access uses Groq. Choose your own provider key to use another provider.")
             if credential_mode == OWN_KEY_MODE and route == "/api/chat":
                 saved_key = _get_profile_secret(profile_id)
                 if not saved_key and text_field("provider", "groq").strip().lower() not in ("ollama", "lmstudio"):
                     raise ValueError("Your own provider key is not available in this server session. Open Settings and save it again.")
-            reply = generate_reply(
-                message, history, text_field("personality", "normal"),
-                text_field("provider", "groq"), supplied_key or saved_key,
-                text_field("base_url"), text_field("model"), images=images,
-                on_request_start=request_start,
-                allow_environment_key=allow_environment_key,
-            )
+            try:
+                reply = generate_reply(
+                    message, history, text_field("personality", "normal"),
+                    text_field("provider", "groq"), supplied_key or saved_key,
+                    text_field("base_url"), text_field("model"), images=images,
+                    on_request_start=request_start,
+                    allow_environment_key=allow_environment_key,
+                )
+            except Exception as exc:
+                if supabase_reserved and quota_client:
+                    try:
+                        quota_client.finalize_anonymous_message(
+                            normalized_req_id,
+                            success=False,
+                            model=text_field("model", "llama-3.3-70b-versatile"),
+                            error_code=type(exc).__name__,
+                        )
+                    except Exception as release_exc:
+                        print(f"[BrainCellGPT] failed to release reservation: {release_exc}")
+                raise
             if route == "/api/test-connection":
                 self.send_json(200, {"ok": True, "message": "Connection successful.", "provider": text_field("provider", "groq")})
             elif credential_mode == OWN_KEY_MODE:
                 self.send_json(200, {"reply": reply, "credential_mode": OWN_KEY_MODE})
             else:
-                self.send_json(200, {
-                    "reply": reply,
-                    "messages_used": reserved_count,
-                    "message_limit": MAX_SHARED_MESSAGES_PER_INSTALLATION,
-                    "credential_mode": SHARED_GROQ_MODE,
-                })
+                if supabase_reserved and quota_client:
+                    finalize_result = quota_client.finalize_anonymous_message(
+                        normalized_req_id,
+                        success=True,
+                        model=text_field("model", "llama-3.3-70b-versatile"),
+                    )
+                    messages_used = finalize_result.get("messages_used", reserved_count or 1)
+                    self.send_json(200, {
+                        "reply": reply,
+                        "messages_used": messages_used,
+                        "message_limit": MAX_ANONYMOUS_DAILY_MESSAGES,
+                        "credential_mode": SHARED_GROQ_MODE,
+                    }, cookie_header=cookie_to_set)
+                else:
+                    self.send_json(200, {
+                        "reply": reply,
+                        "messages_used": reserved_count,
+                        "message_limit": MAX_SHARED_MESSAGES_PER_INSTALLATION,
+                        "credential_mode": SHARED_GROQ_MODE,
+                    })
         except json.JSONDecodeError:
             self.send_json(400, {"error": "Invalid JSON request."})
+        except InvalidAnonymousIdentityError:
+            self.send_json(400, {"error": "Invalid anonymous identity signature."})
+        except MissingConfigurationError as exc:
+            self.send_json(503, {"error": str(exc)})
+        except QuotaExceededError:
+            self.send_json(429, {
+                "error": "Daily anonymous Groq quota reached (10 messages per day). Quota resets at 00:00 UTC. Add your own provider key in Settings to continue.",
+                "messages_used": MAX_ANONYMOUS_DAILY_MESSAGES,
+                "message_limit": MAX_ANONYMOUS_DAILY_MESSAGES,
+                "credential_mode": SHARED_GROQ_MODE,
+            })
+        except DuplicateAnonymousRequestError:
+            self.send_json(409, {"error": "This message was already submitted. Check the conversation before trying again."})
+        except SupabaseUnavailableError:
+            self.send_json(503, {"error": "Quota service is temporarily unavailable. Please try again later."})
+        except SupabaseQuotaError as exc:
+            self.send_json(502, {"error": str(exc)})
         except ConversationNotFound:
             self.send_json(404, {"error": "Conversation not found. Start a new conversation."})
         except DuplicateChatRequest:
@@ -821,9 +963,9 @@ class Handler(BaseHTTPRequestHandler):
         except RuntimeError as exc:
             print(f"[BrainCellGPT] chat request failed: {str(exc)[:300]}")
             response_data = {"error": str(exc)}
-            if route == "/api/chat" and reserved_count is not None:
+            if route == "/api/chat" and reserved_count is not None and not supabase_reserved:
                 response_data.update({"messages_used": reserved_count, "message_limit": MAX_SHARED_MESSAGES_PER_INSTALLATION})
-            self.send_json(502, response_data)
+            self.send_json(502, response_data, cookie_header=cookie_to_set)
         except ValueError as exc:
             self.send_json(400, {"error": str(exc)})
         except Exception as exc:
