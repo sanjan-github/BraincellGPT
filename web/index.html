@@ -1429,7 +1429,7 @@ dialog#onboardingDialog::backdrop {
   let history = [];
   let busy = false;
   let conversationId = "";
-  let messagesUsed = 0;
+  let messagesUsed = null;
   let conversationReady = false;
   let conversationSetupPending = true;
   let ownKeyReady = false;
@@ -1779,7 +1779,7 @@ dialog#onboardingDialog::backdrop {
       messageCounter.textContent = "Your provider's limits apply";
       messageCounter.dataset.limit = "available";
     } else {
-      messageCounter.textContent = `${messagesUsed}/${MESSAGE_LIMIT} shared messages used${reached ? " — Add your own key in Settings to continue." : ""}`;
+      messageCounter.textContent = `${Number.isInteger(messagesUsed) ? messagesUsed : "Usage unavailable"}/${MESSAGE_LIMIT} shared messages used${reached ? " — Add your own key in Settings to continue." : ""}`;
       messageCounter.dataset.limit = reached ? "reached" : "available";
     }
     const canSend = Boolean(conversationReady && !busy && !reached && credentialMode && (credentialMode !== "own_key" || ownKeyReady));
@@ -1794,9 +1794,10 @@ dialog#onboardingDialog::backdrop {
 
   async function refreshSharedUsage() {
     if (credentialMode !== "shared_groq") return;
-    const response = await fetch("/api/chat/config");
+    const response = await fetch("/api/chat/quota");
     const data = await readJsonResponse(response);
-    if (response.ok) messagesUsed = Number(data.shared_messages_used) || 0;
+    messagesUsed = response.ok && Number.isInteger(data.messages_used) ? data.messages_used : null;
+    updateMessageCounter();
   }
 
   async function createConversation() {
@@ -1870,7 +1871,8 @@ dialog#onboardingDialog::backdrop {
       providerSelect.disabled = credentialMode === "shared_groq";
 
       if (credentialMode === "shared_groq") {
-        messagesUsed = Number(config.shared_messages_used) || 0;
+        messagesUsed = Number.isInteger(config.shared_messages_used) ? config.shared_messages_used : null;
+        await refreshSharedUsage();
       }
 
       await refreshKeyStatus();

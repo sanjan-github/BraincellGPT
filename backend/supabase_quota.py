@@ -166,10 +166,27 @@ class SupabaseQuotaClient:
                     return {}
                 parsed = json.loads(body)
                 if isinstance(parsed, dict):
-                    return parsed
-                if isinstance(parsed, bool):
-                    return {"allowed": parsed}
-                return {"result": parsed}
+                    result = parsed
+                elif isinstance(parsed, list):
+                    # PostgREST serializes RETURNS TABLE RPCs as a JSON array.
+                    # These quota functions return at most one row per request.
+                    if len(parsed) > 1 or (parsed and not isinstance(parsed[0], dict)):
+                        raise SupabaseUnavailableError("Unexpected rows returned by Supabase quota service.")
+                    result = parsed[0] if parsed else {}
+                elif isinstance(parsed, bool):
+                    result = {"allowed": parsed}
+                else:
+                    result = {"result": parsed}
+
+                # Normalize both the original JSONB contract and the live table
+                # RPC contract into the keys consumed by the backend.
+                if "accepted" in result and "allowed" not in result:
+                    result["allowed"] = result["accepted"]
+                if "successful_messages" in result and "messages_used" not in result:
+                    result["messages_used"] = result["successful_messages"]
+                if "reservation_state" in result and "status" not in result:
+                    result["status"] = result["reservation_state"]
+                return result
         except urllib.error.HTTPError as exc:
             try:
                 err_body = exc.read().decode("utf-8")
@@ -226,14 +243,26 @@ class SupabaseQuotaClient:
 
         allowed = result.get("allowed", False)
         if not allowed:
-            used = result.get("messages_used", MAX_ANONYMOUS_DAILY_MESSAGES)
-            limit = result.get("message_limit", MAX_ANONYMOUS_DAILY_MESSAGES)
+            state = result.get("status")
+            if state and state != "limit_reached":
+                raise DuplicateAnonymousRequestError(
+                    "This message was already submitted. Check the conversation before trying again."
+                )
+            limit = MAX_ANONYMOUS_DAILY_MESSAGES
             raise QuotaExceededError(
                 f"Daily anonymous Groq quota reached ({limit} messages per UTC day). "
                 "Quota resets at 00:00 UTC. Add your own provider key in Settings to continue."
             )
 
         return result
+
+    def get_anonymous_quota_status(self, client_id: str) -> dict[str, Any]:
+        """Read today's quota through the privileged, narrowly scoped status RPC."""
+        norm_client_id = normalize_uuid(client_id, "client ID")
+        return self._call_rpc(
+            "get_anonymous_quota_status",
+            {"p_client_id": norm_client_id},
+        )
 
     def finalize_anonymous_message(
         self,

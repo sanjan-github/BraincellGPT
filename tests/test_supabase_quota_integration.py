@@ -561,6 +561,47 @@ class SupabaseQuotaIntegrationTests(unittest.TestCase):
         self.assertEqual(delete_handler.response_status, 200)
         self.assertTrue(delete_handler.get_json()["deleted"])
 
+    def test_supabase_quota_status_uses_signed_cookie_and_private_rpc(self):
+        client_id, token = generate_anonymous_identity(secret=self.signing_secret)
+        self.mock_quota_client.get_anonymous_quota_status.return_value = {
+            "usage_date": "2026-11-04",
+            "messages_used": 4,
+            "reserved_messages": 1,
+            "remaining_messages": 5,
+        }
+        handler = TestHandler(
+            method="GET",
+            path="/api/chat/quota",
+            headers={"Cookie": f"{ANON_COOKIE_NAME}={token}"},
+        )
+
+        handler.do_GET()
+
+        self.assertEqual(handler.response_status, 200)
+        self.assertEqual(handler.get_json()["messages_used"], 4)
+        self.assertEqual(handler.get_json()["reserved_messages"], 1)
+        self.mock_quota_client.get_anonymous_quota_status.assert_called_once_with(client_id)
+
+    @patch("app.generate_reply")
+    def test_quota_rejection_keeps_newly_issued_identity_cookie(self, mock_reply):
+        self.usage_store.set_credential_mode(SHARED_GROQ_MODE)
+        conv_id = self.usage_store.create_conversation()
+        self.mock_quota_client.reserve_anonymous_message.side_effect = QuotaExceededError("quota reached")
+        handler = TestHandler(
+            method="POST",
+            path="/api/chat",
+            body={"conversation_id": conv_id, "request_id": uuid.uuid4().hex, "message": "Hi", "provider": "groq"},
+        )
+
+        handler.do_POST()
+
+        self.assertEqual(handler.response_status, 429)
+        cookie = handler.response_headers.get("Set-Cookie", "")
+        self.assertIn(f"{ANON_COOKIE_NAME}=", cookie)
+        token = cookie.split(";", 1)[0].split("=", 1)[1]
+        self.assertTrue(verify_client_id(token, secret=self.signing_secret))
+        mock_reply.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
