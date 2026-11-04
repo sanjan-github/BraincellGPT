@@ -459,6 +459,7 @@ class LocalRequestBoundaryTests(unittest.TestCase):
         trusted_hosts = {
             "braincellgpt.vercel.app",
             "braincellgpt-preview-123.vercel.app",
+            "braincellgpt-git-fix-preview-sanjan.vercel.app",
         }
         with patch("app.REMOTE_ACCESS_ENABLED", False), patch("app.VERCEL_TRUSTED_HOSTS", trusted_hosts):
             production = self.make_handler(
@@ -471,8 +472,14 @@ class LocalRequestBoundaryTests(unittest.TestCase):
                 origin="https://braincellgpt-preview-123.vercel.app",
                 fetch_site="same-origin",
             )
+            branch_preview = self.make_handler(
+                host="braincellgpt-git-fix-preview-sanjan.vercel.app",
+                origin="https://braincellgpt-git-fix-preview-sanjan.vercel.app",
+                fetch_site="same-origin",
+            )
             self.assertTrue(production.is_trusted_local_request())
             self.assertTrue(preview.is_trusted_local_request())
+            self.assertTrue(branch_preview.is_trusted_local_request())
 
             untrusted_host = self.make_handler(host="attacker.vercel.app")
             cross_origin = self.make_handler(

@@ -212,10 +212,13 @@ VERCEL_TRUSTED_HOSTS: set[str] = set()
 if os.environ.get("VERCEL") == "1":
     deployment_host = _vercel_hostname(os.environ.get("VERCEL_URL", ""))
     production_host = _vercel_hostname(os.environ.get("VERCEL_PROJECT_PRODUCTION_URL", ""))
+    branch_host = _vercel_hostname(os.environ.get("VERCEL_BRANCH_URL", ""))
     if deployment_host:
         VERCEL_TRUSTED_HOSTS.add(deployment_host)
     if os.environ.get("VERCEL_ENV") == "production" and production_host:
         VERCEL_TRUSTED_HOSTS.add(production_host)
+    if os.environ.get("VERCEL_ENV") == "preview" and branch_host:
+        VERCEL_TRUSTED_HOSTS.add(branch_host)
 
 
 def _is_loopback_host(host: str) -> bool:
