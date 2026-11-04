@@ -3,6 +3,7 @@ import sqlite3
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 from backend.chat_usage import (
     ChatUsageStore,
@@ -13,10 +14,27 @@ from backend.chat_usage import (
     MessageLimitReached,
     OWN_KEY_MODE,
     SHARED_GROQ_MODE,
+    default_database_path,
 )
 
 
 class ChatUsageStoreTests(unittest.TestCase):
+    def test_vercel_uses_writable_temporary_storage_unless_overridden(self):
+        with tempfile.TemporaryDirectory() as vercel_tmp:
+            with patch.dict("os.environ", {"VERCEL": "1"}, clear=True), \
+                 patch("backend.chat_usage.tempfile.gettempdir", return_value=vercel_tmp):
+                expected = Path(vercel_tmp) / "BrainCellGPT" / "chat-usage.sqlite3"
+                self.assertEqual(default_database_path(), expected)
+                store = ChatUsageStore()
+                self.assertEqual(len(store.create_conversation()), 32)
+                self.assertTrue(expected.is_file())
+
+        with patch.dict("os.environ", {
+            "VERCEL": "1",
+            "BRAINCELLGPT_DATA_DIR": "/custom/data",
+        }, clear=True):
+            self.assertEqual(default_database_path(), Path("/custom/data/chat-usage.sqlite3"))
+
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.database = Path(self.temp_dir.name) / "usage.sqlite3"
